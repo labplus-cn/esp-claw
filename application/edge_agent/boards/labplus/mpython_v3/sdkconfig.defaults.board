@@ -1,7 +1,6 @@
-# Labplus mPython V3: ESP32-S3, 16 MB QIO flash and Octal PSRAM.
-# The flash size and Octal PSRAM mode follow the existing mPython V3 firmware
-# board configuration; verify the module marking before flashing production
-# hardware.
+# Labplus mPython V3: ESP32-S3, 16 MB QIO flash and external Quad PSRAM.
+# The mPython 3.0 board uses external QSPI PSRAM on GPIO30 (clock) and
+# GPIO26 (chip select). The separate development board uses Octal PSRAM.
 
 CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
 
@@ -12,8 +11,12 @@ CONFIG_PARTITION_TABLE_CUSTOM=y
 CONFIG_PARTITION_TABLE_CUSTOM_FILENAME="partitions_16MB.csv"
 
 CONFIG_SPIRAM=y
-CONFIG_SPIRAM_MODE_OCT=y
+CONFIG_SPIRAM_MODE_QUAD=y
+CONFIG_SPIRAM_TYPE_AUTO=y
+CONFIG_SPIRAM_CLK_IO=30
+CONFIG_SPIRAM_CS_IO=26
 CONFIG_SPIRAM_SPEED_80M=y
+CONFIG_SPIRAM_BOOT_INIT=y
 
 CONFIG_ESP_BOARD_DEV_DISPLAY_LCD_SUPPORT=y
 CONFIG_ESP_BOARD_DEV_AUDIO_CODEC_SUPPORT=y
