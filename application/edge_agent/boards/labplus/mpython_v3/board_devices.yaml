@@ -1,0 +1,106 @@
+version: 1.0.0
+# Device configuration for the Labplus mPython V3.
+
+devices:
+  - name: audio_dac
+    chip: es8388
+    type: audio_codec
+    version: default
+    config:
+      adc_enabled: false
+      dac_enabled: true
+      dac_max_channel: 2
+      dac_channel_mask: "11"
+      dac_init_gain: 0
+    peripherals:
+      - name: i2s_audio_out
+      - name: i2c_master
+        address: 0x20
+        frequency: 400000
+
+  - name: audio_adc
+    chip: es8388
+    type: audio_codec
+    version: default
+    config:
+      adc_enabled: true
+      adc_max_channel: 2
+      adc_channel_mask: "11"
+      adc_init_gain: 0
+    peripherals:
+      - name: i2s_audio_in
+      - name: i2c_master
+        address: 0x20
+        frequency: 400000
+
+  - name: display_lcd
+    chip: jd9853
+    type: display_lcd
+    sub_type: spi
+    version: default
+    dependencies:
+      esp_lcd_jd9853:
+        override_path: "${BOARD_PATH}/components/esp_lcd_jd9853"
+        require: public
+    config:
+      swap_xy: true
+      mirror_x: true
+      mirror_y: true
+      x_max: 320
+      y_max: 172
+      need_reset: true
+      io_spi_config:
+        cs_gpio_num: 34
+        dc_gpio_num: 35
+        spi_mode: 0
+        pclk_hz: 60000000
+        trans_queue_depth: 1
+        lcd_cmd_bits: 8
+        lcd_param_bits: 8
+        cs_ena_pretrans: 0
+        cs_ena_posttrans: 0
+        flags:
+          sio_mode: false
+      lcd_panel_config:
+        # The reference mPython V3 definition uses software reset.
+        reset_gpio_num: -1
+        rgb_ele_order: LCD_RGB_ELEMENT_ORDER_BGR
+        data_endian: LCD_RGB_DATA_ENDIAN_BIG
+        bits_per_pixel: 16
+        vendor_config: NULL
+    peripherals:
+      - name: spi_display
+
+  # Created on demand by Lua so Board Manager does not claim the RMT channel
+  # during boot. This follows the reference ESP32-S3 board pattern.
+  - name: status_led
+    chip: ws2812
+    type: custom
+    version: default
+    init_skip: true
+    dependencies:
+      espressif/led_strip:
+        version: "^3.0"
+        public: true
+    config:
+      max_leds: 3
+    peripherals:
+      - name: rgb_rmt
+
+  - name: button_a
+    type: gpio_ctrl
+    version: default
+    config:
+      active_level: 0
+      default_level: 1
+    peripherals:
+      - name: gpio_button_a
+
+  - name: button_b
+    type: gpio_ctrl
+    version: default
+    config:
+      active_level: 0
+      default_level: 1
+    peripherals:
+      - name: gpio_button_b

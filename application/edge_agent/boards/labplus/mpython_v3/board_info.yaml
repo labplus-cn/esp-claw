@@ -1,0 +1,4 @@
+board: mpython_v3
+chip: esp32s3
+description: "Labplus mPython V3"
+manufacturer: "Labplus"
