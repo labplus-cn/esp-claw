@@ -1,0 +1,23 @@
+CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ_240=y
+
+# x_card: 16 MB QIO flash + 8 MB external quad PSRAM
+CONFIG_ESPTOOLPY_FLASHMODE_QIO=y
+CONFIG_ESPTOOLPY_FLASHFREQ_80M=y
+CONFIG_ESPTOOLPY_FLASHSIZE_16MB=y
+
+CONFIG_SPIRAM=y
+CONFIG_SPIRAM_MODE_QUAD=y
+CONFIG_SPIRAM_SPEED_80M=y
+
+# Disable XIP-from-PSRAM: external quad PSRAM for heap allocations only
+CONFIG_SPIRAM_XIP_FROM_PSRAM=n
+CONFIG_SPIRAM_FETCH_INSTRUCTIONS=n
+CONFIG_SPIRAM_RODATA=n
+
+# Quad PSRAM cannot keep the stack accessible while cache is disabled for a flash
+# transaction. Force FreeRTOS to allocate task stacks from internal RAM so claw
+# tasks tagged CLAW_TASK_STACK_PREFER_PSRAM fall back to internal memory.
+CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM=n
+CONFIG_MDNS_TASK_CREATE_FROM_INTERNAL=y
+
+CONFIG_APP_CLAW_LUA_MODULE_LCD=y

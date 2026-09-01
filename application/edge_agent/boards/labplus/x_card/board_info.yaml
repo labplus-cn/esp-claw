@@ -1,0 +1,5 @@
+board: x_card
+chip: esp32s3
+version: 1.0.0
+description: "x_card_board"
+manufacturer: "labplus"

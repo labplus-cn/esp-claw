@@ -1,0 +1,5 @@
+version: "0.1.0"
+description: X-Card board manager device drivers (sensors, power, etc.)
+
+dependencies:
+  espressif/esp_board_manager: "*"

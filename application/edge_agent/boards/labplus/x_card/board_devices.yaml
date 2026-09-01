@@ -1,0 +1,423 @@
+board: x_card
+chip: esp32s3
+version: 1.0.0
+# Devices Configuration
+devices:
+  - name: audio_dac
+    # Physical codec is ES8390; esp_codec_dev uses the compatible ES8389 driver key.
+    chip: es8389
+    type: audio_codec
+    version: default
+    config:
+      adc_enabled: false
+      dac_enabled: true
+      dac_max_channel: 2
+      # DAC channel mask, 1-enable, 0-disable, layout: left,right
+      dac_channel_mask: "11"     # Both channels enable
+      mclk_enabled: true
+
+    # Power amplifier configuration
+    peripherals:
+      - name: gpio_pa_control
+        gain: 6                    # dB
+        active_level: 1            # 0-low, 1-high
+      - name: i2s_audio_out
+      - name: i2c_master
+        address: 0x20              # Physical 7-bit addr 0x10; codec config uses 8-bit form
+        frequency: 400000          # Hz
+
+  - name: audio_adc
+    # Physical codec is ES8390; esp_codec_dev uses the compatible ES8389 driver key.
+    chip: es8389
+    type: audio_codec
+    version: default
+    config:
+      adc_enabled: true
+      adc_max_channel: 2
+      adc_channel_mask: "11"
+      adc_channel_labels: ['RE', 'FC'] # MSB ~ LSB, ch1 = reference, ch0 = microphone
+      adc_init_gain: 0           # dB
+      mclk_enabled: true
+
+    # Power amplifier configuration
+    peripherals:
+      # I2S interface configuration
+      - name: i2s_audio_in
+      # I2C interface configuration
+      - name: i2c_master
+        address: 0x20              # Physical 7-bit addr 0x10; codec config uses 8-bit form
+        frequency: 400000          # Hz
+
+  - name: lcd_brightness
+    type: ledc_ctrl
+    version: default
+    config:
+      default_percent: 0
+    peripherals:
+      - name: ledc_backlight
+
+  # Onboard passive buzzer on P12 (GPIO21)
+  - name: buzzer
+    type: ledc_ctrl
+    version: default
+    config:
+      default_percent: 0
+    peripherals:
+      - name: ledc_buzzer
+
+  - name: display_lcd
+    chip: jd9853
+    type: display_lcd
+    version: default
+    sub_type: spi
+    dependencies:
+      x_card_bmgr_device:
+        override_path: "${BOARD_PATH}/../../../../../components/x_card_bmgr_device"
+        require: public
+    config:
+      swap_xy: true
+      mirror_x: true
+      mirror_y: true
+      x_max: 320
+      y_max: 172
+      need_reset: true
+      # esp_lcd_panel_io_spi_config_t fields
+      io_spi_config:
+        cs_gpio_num: 34                   # GPIO34 - LCD_CS
+        dc_gpio_num: 35                   # GPIO35 - LCD_DC
+        spi_mode: 0                       # Traditional SPI mode (0~3)
+        pclk_hz: 60000000                 # Frequency of pixel clock
+        trans_queue_depth: 1
+        lcd_cmd_bits: 8
+        lcd_param_bits: 8
+        cs_ena_pretrans: 0
+        cs_ena_posttrans: 0
+        flags:
+          sio_mode: false                 # Single line mode
+
+      lcd_panel_config:
+        reset_gpio_num: 47
+        rgb_ele_order: "LCD_RGB_ELEMENT_ORDER_BGR"
+        data_endian: "LCD_RGB_DATA_ENDIAN_BIG" # LCD_RGB_DATA_ENDIAN_LITTLE
+      # JD9853-specific configuration is supplied by setup_device.c
+        vendor_config: NULL
+
+    peripherals:
+      - name: spi_display             # SPI peripheral for LCD communication
+
+  # Sensors — I2C bus (shared with audio codec)
+  - name: qmi8658
+    type: custom
+    chip: qmi8658
+    config:
+      sensor_type: "imu_6axis"
+      description: "6-axis IMU (Accelerometer + Gyroscope)"
+    peripherals:
+      - name: i2c_master
+
+  - name: ltr308als
+    type: custom
+    chip: ltr308als
+    config:
+      sensor_type: "ambient_light"
+      description: "Ambient Light Sensor"
+    peripherals:
+      - name: i2c_master
+
+  # Button Devices — one device per GPIO (dev_button only supports single GPIO)
+  - name: confirm_button
+    type: button
+    sub_type: gpio                 # Button sub type: "gpio", "adc_single", or "adc_multi"
+    config:
+      # GPIO Configuration
+      active_level: 0              # [TO_BE_CONFIRMED] Active level (0-low, 1-high) when button is pressed
+      enable_power_save: false     # Enable power save mode (default: false)
+      disable_pull: false          # Disable internal pull-up/pull-down (default: false)
+      # Button Timing Configuration
+      long_press_time: 2000        # Long press time in milliseconds (default: 2000)
+      short_press_time: 100        # Short press time in milliseconds (default: 100)
+      events_cfg:
+        press_down: true           # Enable press down event (default: true)
+        press_up: true             # Enable press up event (default: true)
+        single_click: true         # Enable single click event (default: true)
+        double_click: true         # Enable double click event (default: true)
+        multi_click: false         # Enable multi click event (default: false)
+        click_counts: []           # Multi click counts configuration (default: [])
+                                    # eg: Set to [3, 4] means enable multi_click event with 3 and 4 counts
+        long_press_start: true     # Enable long press start event (default: true)
+        long_press_start_time: []  # Long press start time configuration in ms (default: [])
+                                    # eg: Set to [3000, 4000] means enable long_press_start event with 3 and 4 seconds
+        long_press_hold: false     # Enable long press hold event (default: false)
+        long_press_up: true        # Enable long press up event (default: true)
+        long_press_up_time: []     # Long press up time configuration in ms (default: [])
+        press_repeat: false        # Enable press repeat event (default: false)
+        press_repeat_done: false   # Enable press repeat done event (default: false)
+        press_end: false           # Enable press end event (default: false)
+
+    peripherals:
+      - name: gpio_confirm_button                 # [TO_BE_CONFIRMED] GPIO peripheral name
+
+  - name: return_button
+    type: button
+    sub_type: gpio                 # Button sub type: "gpio", "adc_single", or "adc_multi"
+    config:
+      # GPIO Configuration
+      active_level: 0              # [TO_BE_CONFIRMED] Active level (0-low, 1-high) when button is pressed
+      enable_power_save: false     # Enable power save mode (default: false)
+      disable_pull: false          # Disable internal pull-up/pull-down (default: false)
+      # Button Timing Configuration
+      long_press_time: 2000        # Long press time in milliseconds (default: 2000)
+      short_press_time: 100        # Short press time in milliseconds (default: 100)
+      events_cfg:
+        press_down: true           # Enable press down event (default: true)
+        press_up: true             # Enable press up event (default: true)
+        single_click: true         # Enable single click event (default: true)
+        double_click: true         # Enable double click event (default: true)
+        multi_click: false         # Enable multi click event (default: false)
+        click_counts: []           # Multi click counts configuration (default: [])
+                                    # eg: Set to [3, 4] means enable multi_click event with 3 and 4 counts
+        long_press_start: true     # Enable long press start event (default: true)
+        long_press_start_time: []  # Long press start time configuration in ms (default: [])
+                                    # eg: Set to [3000, 4000] means enable long_press_start event with 3 and 4 seconds
+        long_press_hold: false     # Enable long press hold event (default: false)
+        long_press_up: true        # Enable long press up event (default: true)
+        long_press_up_time: []     # Long press up time configuration in ms (default: [])
+        press_repeat: false        # Enable press repeat event (default: false)
+        press_repeat_done: false   # Enable press repeat done event (default: false)
+        press_end: false           # Enable press end event (default: false)
+
+    peripherals:
+      - name: gpio_return_button                 # [TO_BE_CONFIRMED] GPIO peripheral name
+
+  - name: select_button
+    type: button
+    sub_type: gpio                 # Button sub type: "gpio", "adc_single", or "adc_multi"
+    config:
+      # GPIO Configuration
+      active_level: 0              # [TO_BE_CONFIRMED] Active level (0-low, 1-high) when button is pressed
+      enable_power_save: false     # Enable power save mode (default: false)
+      disable_pull: false          # Disable internal pull-up/pull-down (default: false)
+      # Button Timing Configuration
+      long_press_time: 2000        # Long press time in milliseconds (default: 2000)
+      short_press_time: 100        # Short press time in milliseconds (default: 100)
+      events_cfg:
+        press_down: true           # Enable press down event (default: true)
+        press_up: true             # Enable press up event (default: true)
+        single_click: true         # Enable single click event (default: true)
+        double_click: true         # Enable double click event (default: true)
+        multi_click: false         # Enable multi click event (default: false)
+        click_counts: []           # Multi click counts configuration (default: [])
+                                    # eg: Set to [3, 4] means enable multi_click event with 3 and 4 counts
+        long_press_start: true     # Enable long press start event (default: true)
+        long_press_start_time: []  # Long press start time configuration in ms (default: [])
+                                    # eg: Set to [3000, 4000] means enable long_press_start event with 3 and 4 seconds
+        long_press_hold: false     # Enable long press hold event (default: false)
+        long_press_up: true        # Enable long press up event (default: true)
+        long_press_up_time: []     # Long press up time configuration in ms (default: [])
+        press_repeat: false        # Enable press repeat event (default: false)
+        press_repeat_done: false   # Enable press repeat done event (default: false)
+        press_end: false           # Enable press end event (default: false)
+
+    peripherals:
+      - name: gpio_select_button                 # [TO_BE_CONFIRMED] GPIO peripheral name
+
+  # Battery Voltage ADC Sampling Service
+  # Keep the original ADC_ATTEN_DB_12 configuration (approximately 0-3.3 V).
+  # With Q5 enabled, the 100K/100K divider feeds 0-2.1 V at ADC1_CH4
+  # for a 0-4.2 V VBAT range.
+  - name: battery_adc
+    type: custom
+    chip: adc_battery
+    version: default
+    config:
+      adc_unit: 1                      # ADC_UNIT_1 (ADC1)
+      channel: 4                       # ADC_CHANNEL_4 (GPIO5 - ADC1_CH4)
+      bitwidth: 12                     # ADC_BITWIDTH_12 (12-bit, 0-4095)
+      attenuation: 3                   # ADC_ATTEN_DB_12 (theoretical 0-3.3V; 100K/100K divider output 0-2.1V)
+      samples: 8                       # Average 8 samples for noise reduction
+      sampling_freq_hz: 1              # Sample once per second
+      description: "Battery monitoring: ADC range 0-3.3V; 100K/100K divider output 0-2.1V for 0-4.2V VBAT"
+    peripherals:
+      - name: adc_battery
+
+  # VBUS Charging Detection Device
+  - name: vbus_detector
+    type: custom
+    chip: gpio_vbus
+    version: default
+    config:
+      gpio: 14
+      active_level: 1                   # High = external power present
+      debounce_ms: 20                   # Debounce period
+      description: "Type-C VBUS detection for charging status"
+    peripherals:
+      - name: gpio_vbus
+
+  # microSD card on SDMMC 4-bit bus. Shares GPIO20~25 stuffing option with SPI NAND.
+  - name: fs_sdcard
+    type: fs_fat
+    sub_type: sdmmc
+    init_skip: true
+    version: default
+    config:
+      mount_point: "/sdcard"
+      vfs_config:
+        format_if_mount_failed: true
+        max_files: 5
+        allocation_unit_size: 32768
+      sub_config:
+        slot: SDMMC_HOST_SLOT_0
+        frequency: SDMMC_FREQ_DEFAULT
+        bus_width: 1
+        slot_flags: SDMMC_SLOT_FLAG_INTERNAL_PULLUP
+        pins:
+          clk: 13
+          cmd: 12
+          d0: 11
+          d1: -1
+          d2: -1
+          d3: -1
+          cd: -1
+          wp: -1
+
+  - name: board_led_strip
+    type: led_strip
+    chip: ws2812
+    sub_type: rmt
+    version: default
+    config:
+      strip_gpio_num: 8
+      max_leds: 3
+      led_model: LED_MODEL_WS2812
+      color_component_format: LED_STRIP_COLOR_COMPONENT_FMT_GRB
+      invert_out: false
+      rmt:
+        clk_src: RMT_CLK_SRC_DEFAULT
+        resolution_hz: 10000000
+        mem_block_symbols: 0
+        with_dma: false
+
+  # Base Dock Power Control Device
+  - name: base_power_ctrl
+    type: custom
+    chip: gpio_base_power
+    version: default
+    config:
+      pin: 9
+      active_level: 1
+      description: "Base Dock Power Control"
+    peripherals:
+      - name: gpio_base_power
+
+  # Base Dock Connection Detection Device
+  - name: base_detector
+    type: custom
+    chip: gpio_base_detect
+    version: default
+    config:
+      gpio: 16
+      active_level: 0                   # Low = dock inserted
+      debounce_ms: 20
+      description: "Base Dock insertion detection"
+    peripherals:
+      - name: gpio_base_detect
+
+  # Battery Charging Status Detection Device
+  - name: charging_detector
+    type: custom
+    chip: gpio_charging_status
+    version: default
+    config:
+      gpio: 7
+      active_level: 0                   # Low = charging completed
+      debounce_ms: 20
+      description: "Charging status detection"
+    peripherals:
+      - name: gpio_charging_status
+
+  # Base onboard RGB LED strip
+  - name: base_led_strip
+    type: led_strip
+    chip: ws2812
+    sub_type: rmt
+    version: default
+    config:
+      strip_gpio_num: 15
+      max_leds: 4
+      led_model: LED_MODEL_WS2812
+      color_component_format: LED_STRIP_COLOR_COMPONENT_FMT_GRB
+      invert_out: false
+      rmt:
+        clk_src: RMT_CLK_SRC_DEFAULT
+        resolution_hz: 10000000
+        mem_block_symbols: 0
+        with_dma: false
+
+  # External ledong RGB LED strip
+  - name: ledong_led_strip
+    type: led_strip
+    chip: ws2812
+    sub_type: rmt
+    version: default
+    config:
+      strip_gpio_num: 1
+      max_leds: 4
+      led_model: LED_MODEL_WS2812
+      color_component_format: LED_STRIP_COLOR_COMPONENT_FMT_GRB
+      invert_out: false
+      rmt:
+        clk_src: RMT_CLK_SRC_DEFAULT
+        resolution_hz: 10000000
+        mem_block_symbols: 0
+        with_dma: false
+
+  # External Servo 1
+  - name: ext_servo_1
+    type: custom
+    chip: ext_servo
+    version: default
+    config:
+      servo_id: 1
+      description: "External Servo 1"
+    peripherals:
+      - name: ledc_servo_1
+
+  # External Servo 2
+  - name: ext_servo_2
+    type: custom
+    chip: ext_servo
+    version: default
+    config:
+      servo_id: 2
+      description: "External Servo 2"
+    peripherals:
+      - name: ledc_servo_2
+
+  # External I2C Ultrasonic Sensor
+  - name: ext_ultrasonic
+    type: custom
+    chip: ext_ultrasonic
+    version: default
+    config:
+      description: "I2C Ultrasonic Sensor"
+    peripherals:
+      - name: i2c_master
+
+  # External I2C Dual Motor Driver
+  - name: ext_motor
+    type: custom
+    chip: ext_motor
+    version: default
+    config:
+      description: "I2C Dual Motor Driver"
+    peripherals:
+      - name: i2c_master
+
+  # Sound ADC Sampling Service
+  - name: sound_adc
+    type: custom
+    chip: adc_sound
+    version: default
+    config:
+      samples: 4
+      description: "Sound envelope monitoring via ADC"

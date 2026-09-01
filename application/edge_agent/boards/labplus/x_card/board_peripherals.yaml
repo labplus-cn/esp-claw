@@ -1,0 +1,203 @@
+board: x_card_board
+chip: esp32s3
+version: 1.0.0
+# Peripherals Configuration for X-Card ESP32-S3
+peripherals:
+  # I2C Configuration
+  - name: i2c_master
+    type: i2c
+    role: master
+    config:
+      port: 0
+      pins:
+        sda: 44
+        scl: 43
+
+  # I2S Audio Configuration
+  - name: i2s_audio_out
+    type: i2s
+    role: master
+    format: std-out                     # tdm-out, tdm-in
+    config: &i2s_config
+      port: 0
+      # Clock configuration
+      sample_rate_hz: 16000             # Sample rate in Hz
+      mclk_multiple: 256                # Multiple of MCLK to sample rate (256 or 384 for 24-bit)
+      # Slot configuration
+      data_bit_width: 16                # Data bit width (valid data bits per sample)
+      slot_bit_width: I2S_SLOT_BIT_WIDTH_AUTO  # Total bits per slot (I2S_SLOT_BIT_WIDTH_AUTO or specific value)
+      slot_mode: I2S_SLOT_MODE_STEREO     # I2S_SLOT_MODE_MONO or I2S_SLOT_MODE_STEREO
+      slot_mask: I2S_STD_SLOT_BOTH          # I2S_TDM_SLOT0, I2S_TDM_SLOT1 slots
+      ws_width: 16                      # WS signal width in BCLK ticks
+      total_slot: 2
+
+      # GPIO configuration
+      pins:
+        mclk: 39                       # GPIO number for MCLK
+        bclk: 41                        # GPIO number for BCLK
+        ws: 42                         # GPIO number for WS
+        dout: 38                        # GPIO number for DATA out
+        din: 40                        # GPIO number for DATA in
+
+  - name: i2s_audio_in
+    type: i2s
+    role: master
+    format: std-in
+    config: *i2s_config
+
+  # Power amplifier control
+  - name: gpio_pa_control
+    type: gpio
+    role: io
+    config:
+      pin: 48                          # GPIO48 - Power amplifier control
+      mode: GPIO_MODE_OUTPUT
+      default_level: 0                 # Keep PA muted until PCM playback starts
+
+  # Button GPIO Peripherals
+  - name: gpio_confirm_button
+    type: gpio
+    role: io
+    config:
+      pin: 0                           # GPIO0 - Confirm button
+      mode: GPIO_MODE_INPUT
+      pull_up: true
+      pull_down: false
+      intr_type: GPIO_INTR_ANYEDGE
+
+  - name: gpio_return_button
+    type: gpio
+    role: io
+    config:
+      pin: 46                          # GPIO46 - Return button
+      mode: GPIO_MODE_INPUT
+      pull_up: true
+      pull_down: false
+      intr_type: GPIO_INTR_ANYEDGE
+
+  - name: gpio_select_button
+    type: gpio
+    role: io
+    config:
+      pin: 10                          # GPIO10 - Select button
+      mode: GPIO_MODE_INPUT
+      pull_up: true
+      pull_down: false
+      intr_type: GPIO_INTR_ANYEDGE
+
+  # Battery ADC Sampling Peripheral
+  - name: adc_battery
+    type: adc
+    role: oneshot
+    config:
+      unit_id: ADC_UNIT_1                # ADC Unit 1 (connected to GPIO5)
+      channel_id: 4                      # ADC1 Channel 4
+      atten: ADC_ATTEN_DB_12             # Original 0-3.3V range; 100K/100K divider output is 0-2.1V for 0-4.2V VBAT
+      bit_width: ADC_BITWIDTH_12         # 12-bit resolution (0-4095)
+
+
+  # VBUS Charging Detection (Type-C Power Input)
+  - name: gpio_vbus
+    type: gpio
+    role: io
+    config:
+      pin: 14                          # GPIO14 - VBUS detection (Type-C power)
+      mode: GPIO_MODE_INPUT
+      pull_up: false
+      pull_down: false
+      intr_type: GPIO_INTR_ANYEDGE     # Detect both rising and falling edges
+
+  # Backlight Control
+  - name: ledc_backlight
+    type: ledc
+    version: default
+    config:
+      gpio_num: 33
+      speed_mode: LEDC_LOW_SPEED_MODE
+      channel: 1
+      timer_sel: LEDC_TIMER_0
+      duty: 0
+      duty_resolution: LEDC_TIMER_10_BIT
+      freq_hz: 5000
+
+  # Onboard passive buzzer PWM output (P12 / GPIO21)
+  - name: ledc_buzzer
+    type: ledc
+    version: default
+    config:
+      gpio_num: 21
+      speed_mode: LEDC_LOW_SPEED_MODE
+      channel: 4
+      timer_sel: LEDC_TIMER_2
+      duty: 0
+      duty_resolution: LEDC_TIMER_10_BIT
+      freq_hz: 1000
+
+    # LCD SPI Configuration for JD9853
+  - name: spi_display
+    type: spi
+    role: master
+    config:
+      # spi_bus_config_t fields
+      spi_bus_config:
+        spi_port: SPI2_HOST              # 0: SPI1_HOST, 1: SPI2_HOST, 2: SPI3_HOST
+        mosi_io_num: 37                   # MOSI_IO_NUM
+        sclk_io_num: 36                   # SPI Clock signal
+        max_transfer_sz: 12800  # Maximum transfer size in bytes: keep SPI DMA chunks modest with Wi-Fi enabled
+
+  # Base Dock Power Control
+  - name: gpio_base_power
+    type: gpio
+    role: io
+    config:
+      pin: 9                           # GPIO9 - Base dock power control
+      mode: GPIO_MODE_OUTPUT
+      default_level: 0
+
+  # Base Dock Connection Detection
+  - name: gpio_base_detect
+    type: gpio
+    role: io
+    config:
+      pin: 16                          # GPIO16 - Base dock connection detection
+      mode: GPIO_MODE_INPUT
+      pull_up: true
+      pull_down: false
+      intr_type: GPIO_INTR_ANYEDGE
+
+  # Battery Charging Status Detection
+  - name: gpio_charging_status
+    type: gpio
+    role: io
+    config:
+      pin: 7                           # GPIO7 - Charging status detection
+      mode: GPIO_MODE_INPUT
+      pull_up: true
+      pull_down: false
+      intr_type: GPIO_INTR_ANYEDGE
+
+  # External Servo 1 LEDC Peripheral
+  - name: ledc_servo_1
+    type: ledc
+    version: default
+    config:
+      gpio_num: 17
+      speed_mode: LEDC_LOW_SPEED_MODE
+      channel: 2
+      timer_sel: LEDC_TIMER_1
+      duty: 0
+      duty_resolution: LEDC_TIMER_14_BIT
+      freq_hz: 50
+
+  # External Servo 2 LEDC Peripheral
+  - name: ledc_servo_2
+    type: ledc
+    version: default
+    config:
+      gpio_num: 18
+      speed_mode: LEDC_LOW_SPEED_MODE
+      channel: 3
+      timer_sel: LEDC_TIMER_1
+      duty: 0
+      duty_resolution: LEDC_TIMER_14_BIT
+      freq_hz: 50
