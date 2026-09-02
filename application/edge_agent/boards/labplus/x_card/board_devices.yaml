@@ -52,7 +52,7 @@ devices:
     type: ledc_ctrl
     version: default
     config:
-      default_percent: 0
+      default_percent: 80
     peripherals:
       - name: ledc_backlight
 
