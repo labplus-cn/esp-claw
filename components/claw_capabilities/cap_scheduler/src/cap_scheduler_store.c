@@ -737,6 +737,65 @@ static void cap_scheduler_parse_item_json(const cJSON *node, cap_scheduler_item_
     cap_scheduler_apply_defaults(item);
 }
 
+static cJSON *cap_scheduler_select_items_root(cJSON *root, bool *single_item)
+{
+    cJSON *schedules = NULL;
+    cJSON *id = NULL;
+
+    if (!root || !single_item) {
+        return NULL;
+    }
+
+    *single_item = false;
+    if (cJSON_IsArray(root)) {
+        return root;
+    }
+
+    if (!cJSON_IsObject(root)) {
+        return NULL;
+    }
+
+    schedules = cJSON_GetObjectItemCaseSensitive(root, "schedules");
+    if (cJSON_IsArray(schedules)) {
+        return schedules;
+    }
+
+    id = cJSON_GetObjectItemCaseSensitive(root, "id");
+    if (cJSON_IsString(id)) {
+        *single_item = true;
+        return root;
+    }
+
+    return NULL;
+}
+
+static esp_err_t cap_scheduler_load_item_node(const cJSON *node,
+                                              cap_scheduler_item_t *items,
+                                              size_t max_items,
+                                              size_t *count)
+{
+    esp_err_t err;
+
+    if (!node || !items || !count) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (!cJSON_IsObject(node)) {
+        return ESP_OK;
+    }
+    if (*count >= max_items) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+
+    cap_scheduler_parse_item_json(node, &items[*count]);
+    err = cap_scheduler_validate_item(&items[*count]);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    (*count)++;
+    return ESP_OK;
+}
+
 esp_err_t cap_scheduler_entry_to_json(const cap_scheduler_entry_t *entry, bool include_item, cJSON **out_json)
 {
     cJSON *root = NULL;
@@ -785,8 +844,10 @@ esp_err_t cap_scheduler_load_items(const char *path, cap_scheduler_item_t *items
 {
     char *buf = NULL;
     cJSON *root = NULL;
+    cJSON *items_root = NULL;
     size_t count = 0;
     esp_err_t err;
+    bool single_item = false;
 
     if (!items || !out_count) {
         return ESP_ERR_INVALID_ARG;
@@ -803,27 +864,28 @@ esp_err_t cap_scheduler_load_items(const char *path, cap_scheduler_item_t *items
 
     root = cJSON_Parse(buf);
     free(buf);
-    if (!cJSON_IsArray(root)) {
+    items_root = cap_scheduler_select_items_root(root, &single_item);
+    if (!items_root) {
         cJSON_Delete(root);
         return ESP_ERR_INVALID_RESPONSE;
     }
 
-    cJSON *node = NULL;
-    cJSON_ArrayForEach(node, root) {
-        if (!cJSON_IsObject(node)) {
-            continue;
-        }
-        if (count >= max_items) {
-            cJSON_Delete(root);
-            return ESP_ERR_NO_MEM;
-        }
-        cap_scheduler_parse_item_json(node, &items[count]);
-        err = cap_scheduler_validate_item(&items[count]);
+    if (single_item) {
+        err = cap_scheduler_load_item_node(items_root, items, max_items, &count);
         if (err != ESP_OK) {
             cJSON_Delete(root);
             return err;
         }
-        count++;
+    } else {
+        cJSON *node = NULL;
+
+        cJSON_ArrayForEach(node, items_root) {
+            err = cap_scheduler_load_item_node(node, items, max_items, &count);
+            if (err != ESP_OK) {
+                cJSON_Delete(root);
+                return err;
+            }
+        }
     }
 
     cJSON_Delete(root);

@@ -340,6 +340,13 @@ static esp_err_t cap_scheduler_load_runtime_state_locked(bool *runtime_state_loa
     return ESP_OK;
 }
 
+static bool cap_scheduler_is_recoverable_definition_load_error(esp_err_t err)
+{
+    return err == ESP_ERR_INVALID_RESPONSE ||
+           err == ESP_ERR_INVALID_ARG ||
+           err == ESP_ERR_INVALID_SIZE;
+}
+
 static esp_err_t cap_scheduler_refresh_entry_locked(cap_scheduler_entry_t *entry, int64_t now_ms)
 {
     esp_err_t err;
@@ -799,9 +806,17 @@ esp_err_t cap_scheduler_init(const cap_scheduler_config_t *config)
         esp_err_t err = cap_scheduler_load_from_disk_locked();
 
         if (err != ESP_OK) {
-            ESP_LOGE(TAG, "Scheduler init load failed: %s", esp_err_to_name(err));
-            cap_scheduler_unlock();
-            return err;
+            if (!cap_scheduler_is_recoverable_definition_load_error(err)) {
+                ESP_LOGE(TAG, "Scheduler init load failed: %s", esp_err_to_name(err));
+                cap_scheduler_unlock();
+                return err;
+            }
+            memset(s_cap_scheduler.entries, 0, s_cap_scheduler.max_items * sizeof(cap_scheduler_entry_t));
+            s_cap_scheduler.item_count = 0;
+            ESP_LOGW(TAG,
+                     "Scheduler definitions at %s are invalid (%s); starting with no schedules",
+                     s_cap_scheduler.schedules_path,
+                     esp_err_to_name(err));
         }
     }
     cap_scheduler_unlock();
