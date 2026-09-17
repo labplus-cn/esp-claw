@@ -174,7 +174,7 @@ static void compose_ap_ssid(void)
     ESP_LOGI(TAG, "Provisioning AP SSID: %s", s_ap_ssid);
 }
 
-static void apply_ap_config(void)
+static esp_err_t apply_ap_config(void)
 {
     wifi_config_t ap_cfg = {0};
     ap_cfg.ap.ssid_len = strlen(s_ap_ssid);
@@ -187,7 +187,11 @@ static void apply_ap_config(void)
     } else {
         ap_cfg.ap.authmode = WIFI_AUTH_OPEN;
     }
-    ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_AP, &ap_cfg));
+    esp_err_t err = esp_wifi_set_config(WIFI_IF_AP, &ap_cfg);
+    if (err != ESP_OK) {
+        ESP_LOGW(TAG, "esp_wifi_set_config(AP) failed: %s (will retry after wifi_start)", esp_err_to_name(err));
+    }
+    return err;
 }
 
 static void refresh_ap_ip_str(void)
@@ -257,7 +261,7 @@ static esp_err_t configure_sta_mode(const wifi_manager_config_t *config)
         s_mode = WM_STATE_APSTA;
         err = esp_wifi_set_mode(WIFI_MODE_APSTA);
         if (err != ESP_OK) return err;
-        apply_ap_config();
+        apply_ap_config();  /* may fail on hosted targets before wifi_start */
         err = esp_wifi_set_config(WIFI_IF_STA, &sta_cfg);
         if (err != ESP_OK) return err;
         return ESP_OK;
@@ -266,7 +270,7 @@ static esp_err_t configure_sta_mode(const wifi_manager_config_t *config)
     s_mode = WM_STATE_PROVISION_AP;
     err = esp_wifi_set_mode(WIFI_MODE_AP);
     if (err != ESP_OK) return err;
-    apply_ap_config();
+    apply_ap_config();  /* may fail on hosted targets before wifi_start */
     return ESP_OK;
 }
 
@@ -433,6 +437,8 @@ esp_err_t wifi_manager_start(const wifi_manager_config_t *config)
         err = esp_wifi_start();
         if (err != ESP_OK) return err;
         s_wifi_started = true;
+        /* Re-apply AP config now that Wi-Fi is started (needed for hosted targets) */
+        apply_ap_config();
     }
     return ESP_OK;
 }
