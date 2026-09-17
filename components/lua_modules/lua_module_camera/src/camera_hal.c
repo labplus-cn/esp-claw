@@ -29,6 +29,9 @@
 #define CAMERA_SETTLE_TIMEOUT_MS   30000  /* settle at open time, allow slow SPI sensors */
 #define CAMERA_BUFFER_COUNT            3
 #define CAMERA_STREAM_SETTLE_FRAMES    3  /* reduced: 3 frames enough for AE/AWB stabilize */
+#define CAMERA_ISP_DEVICE_PATH         "/dev/video20"
+#define CAMERA_ISP_CTRL_RETRY_COUNT    5
+#define CAMERA_ISP_CTRL_RETRY_DELAY_MS 50
 
 static const char *TAG = "camera_service";
 
@@ -37,6 +40,8 @@ static void camera_fourcc_to_string(uint32_t pixel_format, char out[5]);
 static esp_err_t camera_requeue_buffer_locked(struct v4l2_buffer *buffer);
 static esp_err_t camera_set_vflip_locked(bool enable);
 static esp_err_t camera_set_hmirror_locked(bool enable);
+static void camera_apply_ae_level_locked(int fd);
+static void camera_apply_isp_image_quality_controls(void);
 
 typedef struct {
     bool active;
@@ -456,6 +461,8 @@ static esp_err_t camera_open_locked(const char *dev_path, const camera_open_opts
         ESP_LOGW(TAG, "Failed to apply horizontal mirror, continue opening camera: %s", esp_err_to_name(err));
     }
 
+    camera_apply_ae_level_locked(s_camera.fd);
+
     s_camera.width = format.fmt.pix.width;
     s_camera.height = format.fmt.pix.height;
     s_camera.pixel_format = format.fmt.pix.pixelformat;
@@ -533,6 +540,8 @@ static esp_err_t camera_open_locked(const char *dev_path, const camera_open_opts
         camera_close_locked();
         return err;
     }
+
+    camera_apply_isp_image_quality_controls();
 
     return ESP_OK;
 }
@@ -957,6 +966,95 @@ static esp_err_t camera_set_hmirror_locked(bool enable)
     }
     ESP_LOGI(TAG, "Camera horizontal mirror: %s", enable ? "enabled" : "disabled");
     return ESP_OK;
+}
+
+static void camera_apply_ae_level_locked(int fd)
+{
+#ifdef CONFIG_LUA_MODULE_CAMERA_AE_LEVEL
+    if (CONFIG_LUA_MODULE_CAMERA_AE_LEVEL == 48) {
+        return;
+    }
+
+    struct v4l2_ext_control control = {
+        .id    = V4L2_CID_CAMERA_AE_LEVEL,
+        .value = CONFIG_LUA_MODULE_CAMERA_AE_LEVEL,
+    };
+    struct v4l2_ext_controls controls = {
+        .ctrl_class = V4L2_CID_CAMERA_CLASS,
+        .count      = 1,
+        .controls   = &control,
+    };
+
+    if (fd < 0) {
+        return;
+    }
+    if (ioctl(fd, VIDIOC_S_EXT_CTRLS, &controls) != 0) {
+        ESP_LOGW(TAG, "Failed to set AE level to %d (errno=%d)",
+                 CONFIG_LUA_MODULE_CAMERA_AE_LEVEL, errno);
+    } else {
+        ESP_LOGI(TAG, "Camera AE level set to %d (sensor default=48)",
+                 CONFIG_LUA_MODULE_CAMERA_AE_LEVEL);
+    }
+#else
+    (void)fd;
+#endif
+}
+
+static int camera_isp_set_control_with_retry(int isp_fd, uint32_t ctrl_id,
+                                              int32_t value, const char *name)
+{
+    struct v4l2_ext_controls controls;
+    struct v4l2_ext_control control[1];
+
+    for (int i = 0; i < CAMERA_ISP_CTRL_RETRY_COUNT; i++) {
+        memset(&controls, 0, sizeof(controls));
+        memset(control, 0, sizeof(control));
+        controls.ctrl_class = V4L2_CID_USER_CLASS;
+        controls.count = 1;
+        controls.controls = control;
+        control[0].id = ctrl_id;
+        control[0].value = value;
+
+        if (ioctl(isp_fd, VIDIOC_S_EXT_CTRLS, &controls) == 0) {
+            ESP_LOGI(TAG, "ISP %s set to %d", name, (int)value);
+            return 0;
+        }
+        if (i < CAMERA_ISP_CTRL_RETRY_COUNT - 1) {
+            vTaskDelay(pdMS_TO_TICKS(CAMERA_ISP_CTRL_RETRY_DELAY_MS));
+        }
+    }
+    ESP_LOGW(TAG, "Failed to set ISP %s to %d after %d retries",
+             name, (int)value, CAMERA_ISP_CTRL_RETRY_COUNT);
+    return -1;
+}
+
+static void camera_apply_isp_image_quality_controls(void)
+{
+#if defined(CONFIG_LUA_MODULE_CAMERA_ISP_CONTRAST) || \
+    defined(CONFIG_LUA_MODULE_CAMERA_ISP_BRIGHTNESS) || \
+    defined(CONFIG_LUA_MODULE_CAMERA_ISP_SATURATION)
+    int isp_fd = open(CAMERA_ISP_DEVICE_PATH, O_RDWR);
+    if (isp_fd < 0) {
+        ESP_LOGW(TAG, "Failed to open ISP device %s (ISP pipeline may not be active)",
+                 CAMERA_ISP_DEVICE_PATH);
+        return;
+    }
+
+#ifdef CONFIG_LUA_MODULE_CAMERA_ISP_CONTRAST
+    camera_isp_set_control_with_retry(isp_fd, V4L2_CID_CONTRAST,
+                                      CONFIG_LUA_MODULE_CAMERA_ISP_CONTRAST, "contrast");
+#endif
+#ifdef CONFIG_LUA_MODULE_CAMERA_ISP_BRIGHTNESS
+    camera_isp_set_control_with_retry(isp_fd, V4L2_CID_BRIGHTNESS,
+                                      CONFIG_LUA_MODULE_CAMERA_ISP_BRIGHTNESS, "brightness");
+#endif
+#ifdef CONFIG_LUA_MODULE_CAMERA_ISP_SATURATION
+    camera_isp_set_control_with_retry(isp_fd, V4L2_CID_SATURATION,
+                                      CONFIG_LUA_MODULE_CAMERA_ISP_SATURATION, "saturation");
+#endif
+
+    close(isp_fd);
+#endif
 }
 
 bool camera_is_open(void)

@@ -16,4 +16,42 @@ menu "Lua Camera Module"
             Set V4L2_CID_HFLIP to 1 when enabled or 0 when disabled whenever
             camera.open() starts a camera stream.
 
+    config LUA_MODULE_CAMERA_AE_LEVEL
+        int "AE target level (lower=darker, range 2-235, sensor default 48)"
+        range 2 235
+        default 48
+        help
+            Auto-exposure target brightness level (V4L2_CID_CAMERA_AE_LEVEL).
+            Lower values produce darker images, higher values brighter.
+            Sensor default is 48. Set to 48 to skip this control.
+
+    menu "ISP Image Quality (applied after stream start)"
+        depends on ESP_VIDEO_ENABLE_ISP_PIPELINE_CONTROLLER
+
+        config LUA_MODULE_CAMERA_ISP_CONTRAST
+            int "Contrast (0-255, 128=neutral)"
+            range 0 255
+            default 128
+            help
+                ISP contrast via /dev/video20. Higher values increase the
+                difference between light and dark areas. 128 is neutral.
+
+        config LUA_MODULE_CAMERA_ISP_BRIGHTNESS
+            int "Brightness (-128 to 127, 0=neutral)"
+            range -128 127
+            default 0
+            help
+                ISP brightness offset via /dev/video20. Positive values make
+                the image brighter, negative values darker. 0 is neutral.
+
+        config LUA_MODULE_CAMERA_ISP_SATURATION
+            int "Saturation (0-255, 128=neutral)"
+            range 0 255
+            default 128
+            help
+                ISP color saturation via /dev/video20. Higher values make
+                colors more vivid, lower values more washed out. 128 is neutral.
+
+    endmenu
+
 endmenu
