@@ -1,0 +1,67 @@
+-- main.lua — Auto-run demo for ESP-Claw
+-- Place this file at the SD card root (/sdcard/main.lua).
+-- It runs automatically on boot. Remove or rename to skip.
+
+local display = require("display")
+local bm = require("board_manager")
+local delay = require("delay")
+
+print("[main.lua] Hello from SD card!")
+
+-- Get LCD parameters from board manager
+local panel_handle, io_handle, width, height, panel_if = bm.get_display_lcd_params("display_lcd")
+if not panel_handle then
+    print("[main.lua] No LCD found, exiting")
+    return
+end
+
+local ok, err = pcall(display.init, panel_handle, io_handle, width, height, panel_if)
+if not ok then
+    print("[main.lua] display.init failed: " .. tostring(err))
+    return
+end
+
+print(string.format("[main.lua] LCD: %dx%d", width, height))
+
+-- Draw a simple demo screen
+display.begin_frame({ clear = true, color = { r = 20, g = 20, b = 40 } })
+
+-- Title
+display.draw_text_aligned(0, 20, width, 40,
+    "ESP-Claw",
+    { color = "white", font_size = 28, align = "center" })
+
+-- Subtitle
+display.draw_text_aligned(0, 70, width, 30,
+    "main.lua is running!",
+    { color = { r = 100, g = 200, b = 100 }, font_size = 18, align = "center" })
+
+-- Info
+display.draw_text_aligned(0, 120, width, 30,
+    "Auto-run from SD card",
+    { color = { r = 180, g = 180, b = 180 }, font_size = 14, align = "center" })
+
+-- Colored rectangles
+local bar_w = math.floor(width / 4)
+local colors = {
+    { r = 220, g = 50,  b = 50  },
+    { r = 50,  g = 180, b = 50  },
+    { r = 50,  g = 80,  b = 220 },
+    { r = 220, g = 180, b = 30  },
+}
+local bar_y = 180
+local bar_h = 40
+for i, c in ipairs(colors) do
+    local x = (i - 1) * bar_w + 10
+    display.fill_rect(x, bar_y, bar_w - 20, bar_h, c)
+end
+
+display.present()
+display.end_frame()
+
+print("[main.lua] Demo drawn. Keeping display.")
+
+-- Keep running so the display stays alive (async job)
+while true do
+    delay.delay_ms(1000)
+end

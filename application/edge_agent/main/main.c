@@ -23,6 +23,7 @@
 #include "esp_board_manager_includes.h"
 #include "captive_dns.h"
 #include "cmd_wifi.h"
+#include "hw_test_cli.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #if CONFIG_APP_CLAW_CAP_IM_WECHAT
@@ -338,7 +339,11 @@ void app_main(void)
 
     ESP_ERROR_CHECK(wifi_manager_init());
 
-    ESP_ERROR_CHECK(app_claw_ui_start());
+    esp_err_t ui_err = app_claw_ui_start();
+    if (ui_err != ESP_OK) {
+        ESP_LOGW("app", "System UI start failed (%s), continuing without UI",
+                 esp_err_to_name(ui_err));
+    }
 
     ESP_ERROR_CHECK(http_server_init(&(http_server_config_t) {
         .storage_base_path = app_fs_storage_base_path(),
@@ -416,6 +421,7 @@ void app_main(void)
 #endif
 
     register_wifi_command();
+    hw_test_cli_init();
 
 #if APP_ENABLE_MEM_LOG
     /* Start memory monitor: print internal free, min free, PSRAM free every 20s */
