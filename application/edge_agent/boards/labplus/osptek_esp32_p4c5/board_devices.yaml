@@ -1,0 +1,402 @@
+board: osptek_esp32_p4c5
+chip: esp32p4
+version: 1.0.0
+# Devices Configuration
+devices:
+  - name: audio_dac
+    # Physical codec is ES8390; esp_codec_dev uses the compatible ES8389 driver key.
+    chip: es8311
+    type: audio_codec
+    version: default
+    config:
+      adc_enabled: false
+      dac_enabled: true
+      dac_max_channel: 1
+      # DAC channel mask, 1-enable, 0-disable, layout: left,right
+      dac_channel_mask: "1"     # Both channels enable
+      mclk_enabled: true
+
+    # Power amplifier configuration
+    peripherals:
+      - name: gpio_pa_control
+        gain: 6                    # dB
+        active_level: 1            # 0-low, 1-high
+      - name: i2s_audio_out
+      - name: i2c_master
+        address: 0x30              # ES8311 8-bit addr (driver >>1 for new I2C API)
+        frequency: 400000          # Hz
+
+  - name: audio_adc
+    # Physical codec is ES8390; esp_codec_dev uses the compatible ES8389 driver key.
+    chip: es8311
+    type: audio_codec
+    version: default
+    config:
+      adc_enabled: true
+      adc_max_channel: 1
+      adc_channel_mask: "11"
+      adc_channel_labels: ['RE', 'FC'] # MSB ~ LSB, ch1 = reference, ch0 = microphone
+      adc_init_gain: 0           # dB
+      mclk_enabled: true
+
+    # Power amplifier configuration
+    peripherals:
+      # I2S interface configuration
+      - name: i2s_audio_in
+      # I2C interface configuration
+      - name: i2c_master
+        address: 0x30              # ES8311 8-bit addr (driver >>1 for new I2C API)
+        frequency: 400000          # Hz
+
+  - name: lcd_brightness
+    type: ledc_ctrl
+    version: default
+    config:
+      default_percent: 80
+    peripherals:
+      - name: ledc_backlight
+
+  # Onboard passive buzzer on P12 (GPIO21)
+  # - name: buzzer
+  #   type: ledc_ctrl
+  #   version: default
+  #   config:
+  #     default_percent: 0
+  #   peripherals:
+  #     - name: ledc_buzzer
+
+  - name: display_lcd
+    chip: st7701s
+    type: display_lcd
+    sub_type: dsi
+    dependencies:
+      espressif/esp_lcd_st7701: "2.0.2"
+    config:
+      reset_gpio_num: 5
+      rgb_ele_order: LCD_RGB_ELEMENT_ORDER_RGB
+      bits_per_pixel: 24
+      reset_active_high: 0
+      dbi_config:
+        virtual_channel: 0
+        lcd_cmd_bits: 8
+        lcd_param_bits: 8
+      dpi_config:
+        virtual_channel: 0
+        dpi_clk_src: MIPI_DSI_DPI_CLK_SRC_DEFAULT
+        dpi_clock_freq_mhz: 15
+        pixel_format: LCD_COLOR_PIXEL_FORMAT_RGB888
+        # in_color_format: LCD_COLOR_PIXEL_FORMAT_RGB888
+        # out_color_format: 0
+        num_fbs: 1
+        flags:
+          use_dma2d: true
+        video_timing:
+          h_size: 480
+          v_size: 854
+          hsync_back_porch: 30
+          hsync_pulse_width: 2
+          hsync_front_porch: 50
+          vsync_back_porch: 10
+          vsync_pulse_width: 8
+          vsync_front_porch: 20
+    peripherals:
+      - name: ldo_mipi
+      - name: dsi_display
+
+  # FT5316D Capacitive Touch Panel
+  - name: lcd_touch
+    chip: ft5x06
+    type: lcd_touch
+    sub_type: i2c
+    version: default
+    dependencies:
+      esp_lcd_touch:
+        version: "*"
+        require: public
+      espressif/esp_lcd_touch_ft5x06: "^1.0.0"
+    config:
+      io_i2c_config:
+        lcd_cmd_bits: 8
+        scl_speed_hz: 400000
+      touch_config:
+        x_max: 480
+        y_max: 854
+        rst_gpio_num: 6                   # IO6 - Touch reset
+        int_gpio_num: 21                  # IO21 - Touch interrupt
+        levels:
+          reset: 0                        # Active low
+          interrupt: 0                    # Active low
+        flags:
+          mirror_x: true                  # Mirror X coordinates
+    peripherals:
+      - name: i2c_master
+        i2c_addr: [0x70]                  # FT5316D 8-bit I2C address
+
+  # OV2710 MIPI-CSI Camera
+  - name: camera
+    type: camera
+    sub_type: csi
+    config:
+      csi_config:
+        reset_io: 29                   # GPIO29 - Camera reset
+        pwdn_io: -1                    # Not connected
+        dont_init_ldo: true            # Board manager manages MIPI LDO
+        xclk_config:
+          xclk_pin: -1                 # MIPI CSI sensor generates its own clock
+
+    peripherals:
+      - name: i2c_master               # Shared I2C bus (SCCB)
+        frequency: 100000
+      - name: ldo_mipi                 # Shared MIPI LDO with DSI display
+
+  # Sensors — I2C bus (shared with audio codec)
+  # - name: qmi8658
+  #   type: custom
+  #   chip: qmi8658
+  #   config:
+  #     sensor_type: "imu_6axis"
+  #     description: "6-axis IMU (Accelerometer + Gyroscope)"
+  #   peripherals:
+  #     - name: i2c_master
+
+  # - name: ltr308als
+  #   type: custom
+  #   chip: ltr308als
+  #   config:
+  #     sensor_type: "ambient_light"
+  #     description: "Ambient Light Sensor"
+  #   peripherals:
+  #     - name: i2c_master
+
+  # Button Devices — one device per GPIO (dev_button only supports single GPIO)
+  - name: confirm_button
+    type: button
+    sub_type: gpio                 # Button sub type: "gpio", "adc_single", or "adc_multi"
+    config:
+      # GPIO Configuration
+      active_level: 0              # [TO_BE_CONFIRMED] Active level (0-low, 1-high) when button is pressed
+      enable_power_save: false     # Enable power save mode (default: false)
+      disable_pull: false          # Disable internal pull-up/pull-down (default: false)
+      # Button Timing Configuration
+      long_press_time: 2000        # Long press time in milliseconds (default: 2000)
+      short_press_time: 100        # Short press time in milliseconds (default: 100)
+      events_cfg:
+        press_down: true           # Enable press down event (default: true)
+        press_up: true             # Enable press up event (default: true)
+        single_click: true         # Enable single click event (default: true)
+        double_click: true         # Enable double click event (default: true)
+        multi_click: false         # Enable multi click event (default: false)
+        click_counts: []           # Multi click counts configuration (default: [])
+                                    # eg: Set to [3, 4] means enable multi_click event with 3 and 4 counts
+        long_press_start: true     # Enable long press start event (default: true)
+        long_press_start_time: []  # Long press start time configuration in ms (default: [])
+                                    # eg: Set to [3000, 4000] means enable long_press_start event with 3 and 4 seconds
+        long_press_hold: false     # Enable long press hold event (default: false)
+        long_press_up: true        # Enable long press up event (default: true)
+        long_press_up_time: []     # Long press up time configuration in ms (default: [])
+        press_repeat: false        # Enable press repeat event (default: false)
+        press_repeat_done: false   # Enable press repeat done event (default: false)
+        press_end: false           # Enable press end event (default: false)
+
+    peripherals:
+      - name: gpio_confirm_button                 # [TO_BE_CONFIRMED] GPIO peripheral name
+
+  # Battery Voltage ADC Sampling Service
+  # Keep the original ADC_ATTEN_DB_12 configuration (approximately 0-3.3 V).
+  # With Q5 enabled, the 100K/100K divider feeds 0-2.1 V at ADC1_CH4
+  # for a 0-4.2 V VBAT range.
+  # - name: battery_adc
+  #   type: custom
+  #   chip: adc_battery
+  #   version: default
+  #   config:
+  #     adc_unit: 1                      # ADC_UNIT_1 (ADC1)
+  #     channel: 4                       # ADC_CHANNEL_4 (GPIO5 - ADC1_CH4)
+  #     bitwidth: 12                     # ADC_BITWIDTH_12 (12-bit, 0-4095)
+  #     attenuation: 3                   # ADC_ATTEN_DB_12 (theoretical 0-3.3V; 100K/100K divider output 0-2.1V)
+  #     samples: 8                       # Average 8 samples for noise reduction
+  #     sampling_freq_hz: 1              # Sample once per second
+  #     description: "Battery monitoring: ADC range 0-3.3V; 100K/100K divider output 0-2.1V for 0-4.2V VBAT"
+  #   peripherals:
+  #     - name: adc_battery
+
+  # VBUS Charging Detection Device
+  # - name: vbus_detector
+  #   type: custom
+  #   chip: gpio_vbus
+  #   version: default
+  #   config:
+  #     gpio: 14
+  #     active_level: 1                   # High = external power present
+  #     debounce_ms: 20                   # Debounce period
+  #     description: "Type-C VBUS detection for charging status"
+  #   peripherals:
+  #     - name: gpio_vbus
+
+  # microSD card on SDMMC 4-bit bus. Shares GPIO20~25 stuffing option with SPI NAND.
+  - name: fs_sdcard
+    type: fs_fat
+    sub_type: sdmmc
+    version: default
+    config:
+      sub_config:
+        # Use SDMMC slot 0
+        slot: SDMMC_HOST_SLOT_0
+        frequency: SDMMC_FREQ_HIGHSPEED
+        bus_width: 4
+        # If using slot 0, the pin must be configured as 0, the IO pins actually used are configured by the SDMMC driver
+        # For more details, please check https://github.com/espressif/esp-idf/blob/v5.5.1/components/esp_driver_sdmmc/src/sdmmc_host.c#L668
+        pins:
+          clk: 0
+          cmd: 0
+          d0: 0
+          d1: 0
+          d2: 0
+          d3: 0
+          d4: 0
+          d5: 0
+          d6: 0
+          d7: 0
+        ldo_chan_id: 4  # Use LDO_VO4 to power SDMMC IO
+
+  # - name: board_led_strip
+  #   type: led_strip
+  #   chip: ws2812
+  #   sub_type: rmt
+  #   version: default
+  #   config:
+  #     strip_gpio_num: 8
+  #     max_leds: 3
+  #     led_model: LED_MODEL_WS2812
+  #     color_component_format: LED_STRIP_COLOR_COMPONENT_FMT_GRB
+  #     invert_out: false
+  #     rmt:
+  #       clk_src: RMT_CLK_SRC_DEFAULT
+  #       resolution_hz: 10000000
+  #       mem_block_symbols: 0
+  #       with_dma: false
+
+  # Base Dock Power Control Device
+  # - name: base_power_ctrl
+  #   type: custom
+  #   chip: gpio_base_power
+  #   version: default
+  #   config:
+  #     pin: 9
+  #     active_level: 1
+  #     description: "Base Dock Power Control"
+  #   peripherals:
+  #     - name: gpio_base_power
+
+  # Base Dock Connection Detection Device
+  # - name: base_detector
+  #   type: custom
+  #   chip: gpio_base_detect
+  #   version: default
+  #   config:
+  #     gpio: 16
+  #     active_level: 0                   # Low = dock inserted
+  #     debounce_ms: 20
+  #     description: "Base Dock insertion detection"
+  #   peripherals:
+  #     - name: gpio_base_detect
+
+  # Battery Charging Status Detection Device
+  # - name: charging_detector
+  #   type: custom
+  #   chip: gpio_charging_status
+  #   version: default
+  #   config:
+  #     gpio: 7
+  #     active_level: 0                   # Low = charging completed
+  #     debounce_ms: 20
+  #     description: "Charging status detection"
+  #   peripherals:
+  #     - name: gpio_charging_status
+
+  # Base onboard RGB LED strip
+  # - name: base_led_strip
+  #   type: led_strip
+  #   chip: ws2812
+  #   sub_type: rmt
+  #   version: default
+  #   config:
+  #     strip_gpio_num: 15
+  #     max_leds: 4
+  #     led_model: LED_MODEL_WS2812
+  #     color_component_format: LED_STRIP_COLOR_COMPONENT_FMT_GRB
+  #     invert_out: false
+  #     rmt:
+  #       clk_src: RMT_CLK_SRC_DEFAULT
+  #       resolution_hz: 10000000
+  #       mem_block_symbols: 0
+  #       with_dma: false
+
+  # External ledong RGB LED strip
+  # - name: ledong_led_strip
+  #   type: led_strip
+  #   chip: ws2812
+  #   sub_type: rmt
+  #   version: default
+  #   config:
+  #     strip_gpio_num: 1
+  #     max_leds: 4
+  #     led_model: LED_MODEL_WS2812
+  #     color_component_format: LED_STRIP_COLOR_COMPONENT_FMT_GRB
+  #     invert_out: false
+  #     rmt:
+  #       clk_src: RMT_CLK_SRC_DEFAULT
+  #       resolution_hz: 10000000
+  #       mem_block_symbols: 0
+  #       with_dma: false
+
+  # External Servo 1
+  # - name: ext_servo_1
+  #   type: custom
+  #   chip: ext_servo
+  #   version: default
+  #   config:
+  #     servo_id: 1
+  #     description: "External Servo 1"
+  #   peripherals:
+  #     - name: ledc_servo_1
+
+  # External Servo 2
+  # - name: ext_servo_2
+  #   type: custom
+  #   chip: ext_servo
+  #   version: default
+  #   config:
+  #     servo_id: 2
+  #     description: "External Servo 2"
+  #   peripherals:
+  #     - name: ledc_servo_2
+
+  # External I2C Ultrasonic Sensor
+  # - name: ext_ultrasonic
+  #   type: custom
+  #   chip: ext_ultrasonic
+  #   version: default
+  #   config:
+  #     description: "I2C Ultrasonic Sensor"
+  #   peripherals:
+  #     - name: i2c_master
+
+  # External I2C Dual Motor Driver
+  # - name: ext_motor
+  #   type: custom
+  #   chip: ext_motor
+  #   version: default
+  #   config:
+  #     description: "I2C Dual Motor Driver"
+  #   peripherals:
+  #     - name: i2c_master
+
+  # Sound ADC Sampling Service
+  # - name: sound_adc
+  #   type: custom
+  #   chip: adc_sound
+  #   version: default
+  #   config:
+  #     samples: 4
+  #     description: "Sound envelope monitoring via ADC"
