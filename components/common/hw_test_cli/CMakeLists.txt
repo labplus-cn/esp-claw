@@ -1,0 +1,24 @@
+idf_component_register(
+    SRCS
+        "hw_test_cli.c"
+        "hw_test_display.c"
+        "hw_test_camera.c"
+        "hw_test_audio.c"
+        "hw_test_touch.c"
+        "hw_test_lvgl.c"
+        "lua_tool.c"
+    INCLUDE_DIRS
+        "."
+    PRIV_REQUIRES
+        console
+        esp_board_manager
+        display_service
+        driver
+        esp_lcd
+        esp_lcd_touch
+        vfs
+        fatfs
+        esp_psram
+        mbedtls
+        claw_core
+)
