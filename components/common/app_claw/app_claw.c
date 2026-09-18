@@ -49,6 +49,9 @@
 #if CONFIG_APP_CLAW_CAP_LUA
 #include "cap_lua.h"
 #endif
+#if CONFIG_APP_CLAW_CAP_MPY
+#include "cap_mpy.h"
+#endif
 
 static const char *TAG = "app_claw";
 #if CONFIG_APP_CLAW_CAP_EVENT_ROUTER
@@ -863,6 +866,30 @@ esp_err_t app_claw_start(const app_claw_config_t *config)
                 } else {
                     ESP_LOGW(TAG, "Auto-run failed: %s err=%s output=%s",
                              main_lua_path, esp_err_to_name(ar_err), output);
+                }
+            }
+        }
+    }
+#endif
+
+#if CONFIG_APP_CLAW_CAP_MPY
+    /* Auto-run: if <data_root>/main.py exists, launch it asynchronously. */
+    {
+        char main_mpy_path[128];
+        if (claw_paths_join(CLAW_PATH_DATA, "main.py",
+                            main_mpy_path, sizeof(main_mpy_path)) == ESP_OK) {
+            struct stat st;
+            if (stat(main_mpy_path, &st) == 0 && st.st_size > 0) {
+                char output[128] = {0};
+                esp_err_t ar_err = cap_mpy_run_script_async(
+                    main_mpy_path, NULL, 0,
+                    "main", "display", true,
+                    output, sizeof(output));
+                if (ar_err == ESP_OK) {
+                    ESP_LOGI(TAG, "Auto-run: %s", main_mpy_path);
+                } else {
+                    ESP_LOGW(TAG, "Auto-run failed: %s err=%s output=%s",
+                             main_mpy_path, esp_err_to_name(ar_err), output);
                 }
             }
         }

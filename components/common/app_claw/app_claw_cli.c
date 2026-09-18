@@ -36,6 +36,9 @@
 #if CONFIG_APP_CLAW_CAP_LUA
 #include "cmd_cap_lua.h"
 #endif
+#if CONFIG_APP_CLAW_CAP_MPY
+#include "cmd_cap_mpy.h"
+#endif
 #if CONFIG_APP_CLAW_CAP_ROUTER_MGR
 #include "cmd_cap_router_mgr.h"
 #endif
@@ -726,6 +729,9 @@ static void register_cap_cli_commands(void)
 #endif
 #if CONFIG_APP_CLAW_CAP_LUA
     register_cap_lua();
+#endif
+#if CONFIG_APP_CLAW_CAP_MPY
+    register_cap_mpy();
 #endif
 #if CONFIG_APP_CLAW_CAP_LLM_INSPECT
     register_cap_llm_inspect();

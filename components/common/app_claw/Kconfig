@@ -122,6 +122,14 @@ menu "App Claw Config"
                 Enable the Lua capability and keep app_claw's direct dependency
                 on cap_lua.
 
+        config APP_CLAW_CAP_MPY
+            bool "Enable MicroPython capability"
+            default n
+            help
+                Enable the MicroPython capability and keep app_claw's direct
+                dependency on cap_mpy. Provides a MicroPython interpreter
+                that shares hardware configuration via esp_board_manager.
+
         config APP_CLAW_CAP_MCP_CLIENT
             bool "Enable MCP client capability"
             default y

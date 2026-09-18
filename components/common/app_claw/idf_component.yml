@@ -37,6 +37,11 @@ dependencies:
       - if: $CONFIG{APP_CLAW_CAP_LUA} == True
     path: ../../claw_capabilities/cap_lua
 
+  cap_mpy:
+    rules:
+      - if: $CONFIG{APP_CLAW_CAP_MPY} == True
+    path: ../../claw_capabilities/cap_mpy
+
   cap_mcp_client:
     rules:
       - if: $CONFIG{APP_CLAW_CAP_MCP_CLIENT} == True
