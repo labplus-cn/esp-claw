@@ -1,6 +1,8 @@
 # Build output
 build/
 tmp/
+tmp*idf_*
+esp_idf_activate_*/
 releases/
 
 # ESP-IDF
@@ -19,6 +21,10 @@ managed_components/
 *.swp
 *.swo
 *~
+
+# PLY parser cache
+lextab.py
+yacctab.py
 
 # Environment
 .env

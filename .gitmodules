@@ -1,0 +1,6 @@
+[submodule "micropython_source"]
+	path = components/micropython_source
+	url = https://github.com/micropython/micropython.git
+[submodule "lv_binding_micropython"]
+	path = components/claw_capabilities/cap_mpy/usercmodule/lv_binding_micropython
+	url = https://github.com/lvgl/lv_binding_micropython.git
