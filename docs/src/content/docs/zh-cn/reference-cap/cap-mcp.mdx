@@ -1,91 +1,732 @@
 ---
-title: cap_mcp_client / cap_mcp_server
-description: Model Context Protocol（MCP）客户端与服务端能力。
+title: MCP能力
+description: Model Context Protocol（MCP）客户端与服务端的使用指南。
 ---
 
 import LinkToSource from '@/components/LinkToSource.astro';
 import { Aside } from '@astrojs/starlight/components';
 
 **Client** 源码：<LinkToSource relativePath="components/claw_capabilities/cap_mcp_client/src/cap_mcp_client.c" /> ·
-头文件：<LinkToSource relativePath="components/claw_capabilities/cap_mcp_client/include/cap_mcp_client.h" /> ·
-Skill：<LinkToSource relativePath="components/claw_capabilities/cap_mcp_client/skills/cap_mcp_client/SKILL.md" />
+头文件：<LinkToSource relativePath="components/claw_capabilities/cap_mcp_client/include/cap_mcp_client.h" />
 
 **Server** 源码：<LinkToSource relativePath="components/claw_capabilities/cap_mcp_server/src/cap_mcp_server.c" /> ·
-头文件：<LinkToSource relativePath="components/claw_capabilities/cap_mcp_server/include/cap_mcp_server.h" /> ·
-Skill：<LinkToSource relativePath="components/claw_capabilities/cap_mcp_server/skills/cap_mcp_server/SKILL.md" />
+头文件：<LinkToSource relativePath="components/claw_capabilities/cap_mcp_server/include/cap_mcp_server.h" />
+
+**mDNS** 源码：<LinkToSource relativePath="components/common/mcp_mdns/src/mcp_local.c" /> ·
+头文件：<LinkToSource relativePath="components/common/mcp_mdns/include/mcp_mdns.h" />
 
 ## 概述
 
-ESP-Claw 通过 `cap_mcp_client` 和 `cap_mcp_server` 两个组件实现 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 支持：
+ESP-Claw 通过 `cap_mcp_client` 和 `cap_mcp_server` 两个组件实现 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 支持，使设备既能调用远程 MCP 服务，也能被外部客户端控制：
 
-- **`cap_mcp_client`**：允许 LLM 发现并调用远程 MCP 服务器提供的工具
-- **`cap_mcp_server`**：将设备自身的 Capability 暴露为本地 MCP 服务端，供外部 MCP 客户端调用
+- **MCP Client**（`cap_mcp_client`）：LLM agent 通过 3 个工具发现并调用局域网内的远程 MCP 服务器
+- **MCP Server**（`cap_mcp_server`）：将设备自身的能力暴露为 MCP 工具，供外部 MCP 客户端调用
 
-## cap_mcp_client
+**传输协议**：HTTP Streamable，默认端口 `18791`，endpoint `/mcp`，mDNS 服务类型 `_mcp._tcp`。
 
-### 工具描述
+### edge_agent vs mcp_server_point
 
-| 工具 ID | 说明 |
-|---------|------|
-| `mcp_list_tools` | 列出远程 MCP 服务器上的可用工具 |
-| `mcp_call_tool` | 调用远程 MCP 服务器上的指定工具 |
-| `mcp_discover` | 发现局域网内广播的 MCP 服务器 |
+ESP-Claw 提供两个应用示例，MCP 配置截然不同：
 
-### 工具参数
+| 特性 | edge_agent | mcp_server_point |
+|------|-----------|------------------|
+| 定位 | 完整 AI Agent 固件 | 轻量级 MCP 工具服务器 |
+| MCP Client | ✅ 默认启用 | ❌ 默认关闭 |
+| MCP Server | 组件编译进固件，但**不会自动启动** | ✅ 由 main.c 手动启动 |
+| LLM Agent | ✅ claw_core 完整运行时 | ❌ 禁用 |
+| Lua 工具 | 通过 cap_lua 提供 | 内置 6 个 Lua MCP 工具 |
+| IM 通道 | QQ/飞书/Telegram/微信 | 无 |
+| 典型用途 | AI agent 调用远程设备 + 本地智能 | 外部 IDE/脚本控制设备 |
 
-#### `mcp_list_tools`
+<Aside type="caution">
+  在 edge_agent 中，MCP Server 组件虽然编译进固件，但默认不会自动启动。如需在 edge_agent 中启用 MCP Server，需要在 main.c 中手动调用 `cap_mcp_server_init()` / `cap_mcp_server_start()`。
+</Aside>
 
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `server_url` | string | ✅ | MCP 服务器 URL |
-| `endpoint` | string | | MCP endpoint 路径 |
-| `cursor` | string | | 分页游标 |
+## 快速开始：从外部连接设备的 MCP Server
 
-#### `mcp_call_tool`
+<Aside type="caution">
+  **前提条件**：设备必须运行 `mcp_server_point` 应用，或在 `edge_agent` 中手动启动了 MCP Server。设备需已连接 Wi-Fi 并获得 IP 地址。
+</Aside>
 
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `server_url` | string | ✅ | MCP 服务器 URL |
-| `tool_name` | string | ✅ | 要调用的工具名称 |
-| `endpoint` | string | | MCP endpoint 路径 |
-| `arguments` | object | | 传递给工具的参数 |
+### 连接 URL
 
-#### `mcp_discover`
+```
+http://<device-ip>:18791/mcp
+```
 
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `timeout_ms` | integer | | 发现超时时间 |
-| `include_self` | boolean | | 是否包含自身 |
+如果设备 mDNS 配置为默认值 `esp-claw`，也可以使用：
 
-### Group 信息
+```
+http://esp-claw.local:18791/mcp
+```
 
-| 属性 | 值 |
-|------|------|
-| Group ID | `cap_mcp_client` |
-| 默认 LLM 可见 | ❌（需通过 Skill 激活） |
-| 工具数量 | 3 |
+### 完整交互流程
 
-## cap_mcp_server
+MCP 协议基于 JSON-RPC 2.0，典型交互分三步：
 
-### 概述
+**第 1 步：初始化会话**
 
-`cap_mcp_server` 是一个 `CLAW_CAP_KIND_HYBRID` 类型的 Capability，具有生命周期管理。启动后，它在本地创建一个 MCP 服务端实例，将设备的已注册 Capability 暴露为 MCP 工具，供局域网内的外部 MCP 客户端（如桌面 IDE、其他 ESP-Claw 设备）发现和调用。
+```bash
+curl -X POST http://esp-claw.local:18791/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "initialize",
+    "params": {
+      "protocolVersion": "2025-03-26",
+      "capabilities": {},
+      "clientInfo": {
+        "name": "test-client",
+        "version": "1.0.0"
+      }
+    }
+  }'
+```
 
-### 特性
+返回值示例：
 
-- 支持 MCP SSE（Server-Sent Events）传输
-- 自动将设备 Capability 映射为 MCP 工具
-- 支持 mDNS 广播，局域网可发现
-- 具备完整生命周期（init → start → stop）
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 1,
+  "result": {
+    "protocolVersion": "2025-03-26",
+    "capabilities": {
+      "tools": {}
+    },
+    "serverInfo": {
+      "name": "ESP-Claw",
+      "version": "1.0.0"
+    }
+  }
+}
+```
 
-### Group 信息
+**第 2 步：列出可用工具**
 
-| 属性 | 值 |
-|------|------|
-| Group ID | `cap_mcp_server` |
-| 默认 LLM 可见 | ❌ |
-| 工具数量 | 0（作为服务端，不暴露 LLM 可调用工具） |
+```bash
+curl -X POST http://esp-claw.local:18791/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/list",
+    "params": {}
+  }'
+```
+
+返回值示例（mcp_server_point 的 6 个 Lua 工具）：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 2,
+  "result": {
+    "tools": [
+      {
+        "name": "lua.run_script",
+        "description": "Run a Lua script synchronously...",
+        "inputSchema": {
+          "type": "object",
+          "properties": {
+            "path": {"type": "string"},
+            "args": {"type": "string"},
+            "timeout_ms": {"type": "string"}
+          }
+        }
+      },
+      {
+        "name": "lua.run_script_async",
+        "description": "Run a Lua script asynchronously...",
+        "inputSchema": { ... }
+      }
+    ]
+  }
+}
+```
+
+**第 3 步：调用工具**
+
+```bash
+curl -X POST http://esp-claw.local:18791/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 3,
+    "method": "tools/call",
+    "params": {
+      "name": "lua.run_script",
+      "arguments": {
+        "path": "hello.lua",
+        "args": "{\"message\":\"Hello from MCP\"}",
+        "timeout_ms": "5000"
+      }
+    }
+  }'
+```
+
+返回值示例：
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 3,
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "Script executed successfully"
+      }
+    ],
+    "isError": false
+  }
+}
+```
+
+## MCP Client：LLM Agent 调用远程 MCP 服务
+
+`cap_mcp_client` 提供 3 个工具，由 LLM agent 通过 tool call 机制调用。这些工具默认对 LLM 不可见，需通过 Skill 激活。
+
+### mcp_discover
+
+**用途**：发现局域网内通过 mDNS 广播的 MCP 服务器。
+
+**输入参数**：
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "timeout_ms": {
+      "type": "integer",
+      "description": "发现超时时间（毫秒），默认 3000"
+    },
+    "include_self": {
+      "type": "boolean",
+      "description": "是否包含自身，默认 true"
+    }
+  }
+}
+```
+
+**返回值格式**：
+
+```
+instance=ESP-Claw
+hostname=esp-claw
+ip=192.168.1.100
+port=18791
+endpoint=mcp
+url=http://192.168.1.100:18791/mcp
+
+instance=ESP-Claw-2
+hostname=esp-claw-2
+ip=192.168.1.101
+port=18791
+endpoint=mcp
+url=http://192.168.1.101:18791/mcp
+```
+
+### mcp_list_tools
+
+**用途**：列出远程 MCP 服务器上的可用工具。
+
+**输入参数**：
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "server_url": {
+      "type": "string",
+      "description": "MCP 服务器 URL，例如 http://192.168.1.100:18791"
+    },
+    "endpoint": {
+      "type": "string",
+      "description": "MCP endpoint 路径，默认 mcp"
+    },
+    "cursor": {
+      "type": "string",
+      "description": "分页游标"
+    }
+  },
+  "required": ["server_url"]
+}
+```
+
+**返回值格式**：
+
+```
+- lua.run_script: Run a Lua script synchronously...
+- lua.run_script_async: Run a Lua script asynchronously...
+- lua.list_async_jobs: List Lua async jobs by optional status filter.
+
+(nextCursor: abc123)
+```
+
+### mcp_call_tool
+
+**用途**：调用远程 MCP 服务器上的指定工具。
+
+**输入参数**：
+
+```json
+{
+  "type": "object",
+  "properties": {
+    "server_url": {
+      "type": "string",
+      "description": "MCP 服务器 URL，例如 http://192.168.1.100:18791"
+    },
+    "tool_name": {
+      "type": "string",
+      "description": "要调用的工具名称"
+    },
+    "endpoint": {
+      "type": "string",
+      "description": "MCP endpoint 路径，默认 mcp"
+    },
+    "arguments": {
+      "type": "object",
+      "description": "传递给工具的参数"
+    }
+  },
+  "required": ["server_url", "tool_name"]
+}
+```
+
+**返回值**：工具返回的文本内容，或错误信息。
 
 <Aside type="tip">
-  `cap_mcp_client` 与 `cap_mcp_server` 配合使用时，多个 ESP-Claw 设备可以组成分布式 Agent 网络，设备间通过 MCP 协议互相发现并调用对方的能力。
+  这 3 个工具只能由 LLM agent 通过 tool call 调用，不能直接通过 CLI 或 API 调用。如需手动测试，请使用 curl 命令（见上文"快速开始"章节）。
+</Aside>
+
+## mcp_server_point 独立应用
+
+`mcp_server_point` 是一个轻量级应用，专注于提供 MCP 工具服务。它禁用了 LLM agent、IM 通道等重量级组件，保留 Lua 运行时，并内置 6 个 Lua MCP 工具。
+
+### 定位对比
+
+| 特性 | edge_agent | mcp_server_point |
+|------|-----------|------------------|
+| 固件大小 | 较大（包含完整 agent 运行时） | 较小（精简组件） |
+| 启动速度 | 较慢 | 较快 |
+| 内存占用 | 较高 | 较低 |
+| MCP Server | 需手动启动 | 自动启动 |
+| 适用场景 | 需要 AI 智能的设备 | 纯工具服务器 |
+
+### 构建与烧录
+
+```bash
+cd application/mcp_server_point
+idf.py bmgr -c ./boards -b esp32_S3_DevKitC_1
+idf.py build
+idf.py flash monitor
+```
+
+### 6 个 Lua MCP 工具
+
+#### lua.run_script
+
+同步运行 Lua 脚本，阻塞直到脚本执行完成。
+
+**参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| path | string | ✅ | 脚本路径，相对路径基于 `/fatfs/scripts/`，必须以 `.lua` 结尾 |
+| args | string | | 传递给脚本的 JSON 参数 |
+| timeout_ms | string | | 超时时间（毫秒），默认 0 表示无超时 |
+
+**curl 示例**：
+
+```bash
+curl -X POST http://esp-claw.local:18791/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "lua.run_script",
+      "arguments": {
+        "path": "temp/test.lua",
+        "args": "{\"led\":\"on\"}",
+        "timeout_ms": "5000"
+      }
+    }
+  }'
+```
+
+#### lua.run_script_async
+
+异步运行 Lua 脚本，立即返回 job ID。
+
+**参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| path | string | ✅ | 脚本路径 |
+| args | string | | JSON 参数 |
+| timeout_ms | string | | 超时时间，默认 0 表示运行直到取消 |
+| name | string | | job 名称，便于后续引用 |
+| exclusive | string | | 互斥组名称（如 `display`），同组只能运行一个 job |
+| replace | string | | `true` 时替换同组正在运行的 job |
+
+**curl 示例**：
+
+```bash
+curl -X POST http://esp-claw.local:18791/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/call",
+    "params": {
+      "name": "lua.run_script_async",
+      "arguments": {
+        "path": "animation/blink.lua",
+        "name": "blink_led",
+        "exclusive": "led_control"
+      }
+    }
+  }'
+```
+
+#### lua.list_async_jobs
+
+列出异步 job，可按状态过滤。
+
+**参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| status | string | | 状态过滤（如 `running`、`completed`） |
+
+#### lua.get_async_job
+
+获取 job 状态和摘要。
+
+**参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| job_id | string | | job ID |
+| name | string | | job 名称（与 job_id 二选一） |
+
+#### lua.stop_async_job
+
+停止正在运行的 job。
+
+**参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| job_id | string | | job ID |
+| name | string | | job 名称（与 job_id 二选一） |
+| wait_ms | string | | 等待 job 停止的时间（毫秒），默认 2000 |
+
+#### lua.stop_all_async_jobs
+
+停止所有正在运行的 job，可按互斥组过滤。
+
+**参数**：
+
+| 参数 | 类型 | 必填 | 说明 |
+|------|------|------|------|
+| exclusive | string | | 互斥组名称，只停止该组的 job |
+| wait_ms | string | | 等待 job 停止的时间（毫秒） |
+
+### lua.run_script 路径解析规则
+
+- **相对路径**：基于 `/fatfs/scripts/` 解析。例如 `temp/foo.lua` → `/fatfs/scripts/temp/foo.lua`
+- **绝对路径**：必须以 `/` 开头，例如 `/fatfs/scripts/test.lua`
+- **安全约束**：
+  - 必须以 `.lua` 结尾
+  - 不允许包含 `..`（防止路径遍历）
+  - 路径长度不超过 384 字符
+
+<Aside type="caution">
+  路径验证失败时返回错误：`Error: path must be a relative or absolute .lua path`
+</Aside>
+
+### exclusive 互斥组机制
+
+`exclusive` 参数用于实现互斥控制：同一互斥组内只能有一个 job 运行。
+
+**典型场景**：
+
+- `exclusive: "display"`：显示相关脚本互斥，避免多个脚本同时控制屏幕
+- `exclusive: "led_control"`：LED 控制脚本互斥，避免冲突
+
+**replace 参数**：
+
+- `replace: "false"`（默认）：如果同组已有 job 运行，返回错误
+- `replace: "true"`：停止同组正在运行的 job，启动新 job
+
+**示例**：
+
+```bash
+# 第一次启动，成功
+curl -X POST http://esp-claw.local:18791/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 1,
+    "method": "tools/call",
+    "params": {
+      "name": "lua.run_script_async",
+      "arguments": {
+        "path": "display/clock.lua",
+        "name": "clock",
+        "exclusive": "display"
+      }
+    }
+  }'
+
+# 第二次启动同组 job，不带 replace，失败
+curl -X POST http://esp-claw.local:18791/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 2,
+    "method": "tools/call",
+    "params": {
+      "name": "lua.run_script_async",
+      "arguments": {
+        "path": "display/weather.lua",
+        "name": "weather",
+        "exclusive": "display"
+      }
+    }
+  }'
+# 返回错误：exclusive group "display" already has a running job
+
+# 第三次启动，带 replace:true，成功替换
+curl -X POST http://esp-claw.local:18791/mcp \
+  -H "Content-Type: application/json" \
+  -d '{
+    "jsonrpc": "2.0",
+    "id": 3,
+    "method": "tools/call",
+    "params": {
+      "name": "lua.run_script_async",
+      "arguments": {
+        "path": "display/weather.lua",
+        "name": "weather",
+        "exclusive": "display",
+        "replace": "true"
+      }
+    }
+  }'
+```
+
+## 配置指南
+
+### Kconfig 选项
+
+| 选项 | 默认值 | 说明 |
+|------|--------|------|
+| `CONFIG_APP_CLAW_CAP_MCP_CLIENT` | y | 启用 MCP Client 组件 |
+| `CONFIG_APP_CLAW_CAP_MCP_SERVER` | y | 启用 MCP Server 组件 |
+
+### 修改默认配置
+
+默认配置定义在 `components/common/mcp_mdns/include/mcp_mdns.h`：
+
+```c
+#define MCP_MDNS_DEFAULT_ENDPOINT    "mcp"
+#define MCP_MDNS_DEFAULT_HOSTNAME    "esp-claw"
+#define MCP_MDNS_DEFAULT_INSTANCE    "ESP-Claw"
+#define MCP_MDNS_DEFAULT_SERVER_PORT 18791
+#define MCP_MDNS_DEFAULT_CTRL_PORT   18792
+```
+
+如需修改端口、endpoint 或 hostname，在启动 MCP Server 之前调用 `mcp_mdns_set_config()`：
+
+```c
+#include "mcp_mdns.h"
+#include "cap_mcp_server.h"
+
+void app_main(void)
+{
+    // ... Wi-Fi 初始化 ...
+
+    // 修改配置（必须在 cap_mcp_server_start() 之前调用）
+    mcp_mdns_config_t config = {
+        .hostname = "my-device",
+        .instance_name = "My Custom Device",
+        .endpoint = "custom_mcp",
+        .server_port = 9000,
+        .ctrl_port = 9001,
+    };
+    ESP_ERROR_CHECK(mcp_mdns_set_config(&config));
+
+    // 启动 MCP Server
+    ESP_ERROR_CHECK(cap_mcp_server_init());
+    ESP_ERROR_CHECK(cap_mcp_server_add_tool(my_tools, tool_count));
+    ESP_ERROR_CHECK(cap_mcp_server_start());
+}
+```
+
+<Aside type="caution">
+  `mcp_mdns_set_config()` 在 MCP Server 启动后调用会返回 `ESP_ERR_INVALID_STATE` 错误。必须在 `cap_mcp_server_start()` 之前调用。
+</Aside>
+
+## 添加自定义 MCP 工具
+
+### 在 edge_agent 中添加
+
+**步骤 1：在 main.c 中添加启动代码**
+
+```c
+#include "cap_mcp_server.h"
+#include "my_custom_tools.h"
+
+void app_main(void)
+{
+    // ... 现有初始化代码 ...
+
+    // 启动 MCP Server
+    ESP_ERROR_CHECK(cap_mcp_server_init());
+    ESP_ERROR_CHECK(my_custom_tools_init());  // 注册自定义工具
+    ESP_ERROR_CHECK(cap_mcp_server_start());
+}
+```
+
+**步骤 2：创建工具组件**
+
+创建 `components/my_custom_tools/my_custom_tools.c`：
+
+```c
+#include "cap_mcp_server.h"
+#include "esp_mcp_property.h"
+#include "esp_mcp_value.h"
+
+static esp_mcp_value_t my_tool_callback(const esp_mcp_property_list_t *properties)
+{
+    const char *param1 = esp_mcp_property_list_get_property_string(properties, "param1");
+    // 实现工具逻辑
+    return esp_mcp_value_create_string("Result");
+}
+
+static const cap_mcp_server_tool_def_t my_tools[] = {
+    {
+        .name = "my_tool",
+        .description = "My custom tool",
+        .callback = my_tool_callback,
+        .property_names = {"param1", "param2"},
+        .property_count = 2,
+    },
+};
+
+esp_err_t my_custom_tools_init(void)
+{
+    return cap_mcp_server_add_tool(my_tools, 1);
+}
+```
+
+**步骤 3：在 main.c 中调用注册函数**
+
+见步骤 1 中的 `my_custom_tools_init()` 调用。
+
+### 在 mcp_server_point 中添加
+
+在 `application/mcp_server_point/components/` 下创建新组件，参考 `cap_mcp_lua.c` 的实现模式：
+
+1. 创建 `cap_mcp_custom.c` 和 `cap_mcp_custom.h`
+2. 在 `cap_mcp_custom.c` 中定义工具数组和注册函数
+3. 在 `main.c` 中调用注册函数
+
+**目录结构示例**：
+
+```
+application/mcp_server_point/
+├── components/
+│   ├── mcp_server_point_tools/
+│   │   ├── cap_mcp_lua.c
+│   │   ├── cap_mcp_lua.h
+│   │   └── CMakeLists.txt
+│   └── my_custom_tools/
+│       ├── my_custom_tools.c
+│       ├── my_custom_tools.h
+│       └── CMakeLists.txt
+└── main/
+    └── main.c
+```
+
+**约束**：
+
+- 每个工具最多 6 个 property（`property_names` 数组大小限制）
+- 工具名称建议使用 `namespace.tool_name` 格式（如 `lua.run_script`）
+- 工具回调函数必须返回 `esp_mcp_value_t` 类型
+
+## 使用场景
+
+### 分布式设备协作
+
+多个 ESP-Claw 设备通过 MCP 协议互相发现和调用：
+
+```
+设备 A (edge_agent)
+  ↓ mcp_discover
+发现设备 B、C
+  ↓ mcp_call_tool
+调用设备 B 的 lua.run_script 控制 LED
+  ↓ mcp_call_tool
+调用设备 C 的 lua.run_script 读取传感器
+```
+
+**典型应用**：
+
+- 主设备协调多个从设备执行任务
+- 设备间共享能力（如一个设备提供摄像头，另一个提供显示屏）
+- 分布式传感器网络
+
+### 外部 IDE/工具控制设备
+
+外部 MCP 客户端（如 VS Code 插件、自定义脚本）通过 MCP 协议控制设备：
+
+```
+VS Code + MCP 插件
+  ↓ HTTP POST
+设备 MCP Server (mcp_server_point)
+  ↓ lua.run_script
+执行 Lua 脚本控制硬件
+```
+
+**典型应用**：
+
+- 开发者通过 IDE 远程调试和控制设备
+- 自动化测试脚本批量操作设备
+- 自定义桌面应用集成设备控制
+
+## 限制与注意事项
+
+### 功能限制
+
+| 限制 | 说明 |
+|------|------|
+| 无持久连接 | 每次 tool call 都创建新的 HTTP 连接，调用完成后关闭 |
+| 20 秒超时 | MCP Client HTTP 请求超时时间为 20000ms |
+| 6 property 上限 | 每个工具最多 6 个输入参数 |
+| 无认证 | MCP Server 无身份验证，局域网内任何客户端都可调用 |
+| 单客户端 | MCP Server 设计为单客户端场景，不支持并发控制 |
+
+### 网络要求
+
+- 设备和客户端必须在同一局域网
+- mDNS 发现需要网络支持多播（部分企业网络可能禁用）
+- 如果 mDNS 不可用，需手动指定设备 IP 地址
+
+### 性能特征
+
+- **连接建立**：约 50-100ms（TCP 握手 + HTTP 连接）
+- **工具调用延迟**：约 100-500ms（取决于脚本执行时间）
+- **并发限制**：MCP Server 为单线程模型，不支持并发工具调用
+- **内存占用**：MCP Server 运行时约占用 50-100KB 内存
+
+<Aside type="tip">
+  如需降低延迟，可复用 HTTP 连接（Keep-Alive）。MCP Client 已启用 `keep_alive_enable = true`，但每次 tool call 仍会重新初始化会话。
 </Aside>
