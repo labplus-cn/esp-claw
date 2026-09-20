@@ -1,0 +1,5 @@
+board: osptek_esp32_p4c5
+chip: esp32p4
+version: 1.0.0
+description: "osptek_esp32_p4c5"
+manufacturer: "labplus"
