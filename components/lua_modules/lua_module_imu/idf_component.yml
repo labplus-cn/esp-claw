@@ -8,3 +8,7 @@ dependencies:
     version: "*"
     rules:
       - if: "$CONFIG{LUA_MODULE_IMU_CHIP_ICM42670} == True"
+  waveshare/qmi8658:
+    version: "^2.0.1"
+    rules:
+      - if: "$CONFIG{LUA_MODULE_IMU_CHIP_QMI8658} == True"

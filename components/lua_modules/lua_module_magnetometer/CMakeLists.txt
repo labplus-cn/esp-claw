@@ -35,6 +35,15 @@ if(CONFIG_LUA_MODULE_MAGNETOMETER_CHIP_QMC6309)
     )
 endif()
 
+if(CONFIG_LUA_MODULE_MAGNETOMETER_CHIP_MMC5603)
+    list(APPEND mag_srcs
+        "src/mmc5603/mmc5603_backend.c"
+    )
+    list(APPEND mag_include_dirs
+        "src/mmc5603"
+    )
+endif()
+
 idf_component_register(
     SRCS
         ${mag_srcs}

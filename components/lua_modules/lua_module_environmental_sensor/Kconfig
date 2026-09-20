@@ -14,4 +14,18 @@ menu "Lua Environmental Sensor Module"
             Build the environmental sensor Lua module with the DHT-family
             single-wire backend.
 
+    config LUA_MODULE_ENVIRONMENTAL_SENSOR_BACKEND_LTR308ALS
+        bool "Enable LTR-308ALS ambient light sensor backend"
+        default y
+        help
+            Build the environmental sensor Lua module with the LTR-308ALS
+            ambient light sensor backend.
+
+    config LUA_MODULE_ENVIRONMENTAL_SENSOR_BACKEND_SPL06
+        bool "Enable SPL06-001 barometric pressure sensor backend"
+        default y
+        help
+            Build the environmental sensor Lua module with the SPL06-001
+            barometric pressure sensor backend.
+
 endmenu

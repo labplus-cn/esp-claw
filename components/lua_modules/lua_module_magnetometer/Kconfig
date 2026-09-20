@@ -20,6 +20,11 @@ menu "Lua Magnetometer Module"
             bool "QMC6309"
             help
                 Build the magnetometer Lua module with the QMC6309 backend.
+
+        config LUA_MODULE_MAGNETOMETER_CHIP_MMC5603
+            bool "MMC5603"
+            help
+                Build the magnetometer Lua module with the MMC5603NJ backend.
     endchoice
 
 endmenu

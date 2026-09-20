@@ -106,12 +106,16 @@ devices:
       - name: spi_display             # SPI peripheral for LCD communication
 
   # Sensors — I2C bus (shared with audio codec)
-  - name: qmi8658
-    type: custom
+  - name: imu_sensor
     chip: qmi8658
+    type: custom
+    version: 1.0.0
+    init_skip: true
     config:
-      sensor_type: "imu_6axis"
-      description: "6-axis IMU (Accelerometer + Gyroscope)"
+      i2c_addr: 0x6b
+      frequency: 400000
+      int_gpio_num: -1
+      sdo_gpio_num: -1
     peripherals:
       - name: i2c_master
 
@@ -119,8 +123,30 @@ devices:
     type: custom
     chip: ltr308als
     config:
-      sensor_type: "ambient_light"
-      description: "Ambient Light Sensor"
+      i2c_addr: 0x53
+      frequency: 400000
+      int_gpio_num: -1
+    peripherals:
+      - name: i2c_master
+
+  - name: mmc5603
+    type: custom
+    chip: mmc5603
+    config:
+      i2c_addr: 0x30
+      frequency: 400000
+      int_gpio_num: -1
+      sdo_gpio_num: -1
+    peripherals:
+      - name: i2c_master
+
+  - name: spl06
+    type: custom
+    chip: spl06
+    config:
+      i2c_addr: 0x76
+      frequency: 400000
+      int_gpio_num: -1
     peripherals:
       - name: i2c_master
 

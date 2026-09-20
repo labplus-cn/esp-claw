@@ -17,6 +17,13 @@ if(CONFIG_LUA_MODULE_ENVIRONMENTAL_SENSOR_BACKEND_BME690)
     )
 endif()
 
+if(CONFIG_LUA_MODULE_ENVIRONMENTAL_SENSOR_BACKEND_LTR308ALS OR
+   CONFIG_LUA_MODULE_ENVIRONMENTAL_SENSOR_BACKEND_SPL06)
+    list(APPEND env_sensor_priv_requires
+        espressif__i2c_bus
+    )
+endif()
+
 idf_component_register(
     SRCS
         ${env_sensor_srcs}

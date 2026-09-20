@@ -45,6 +45,21 @@ int test_touch(int argc, char **argv);
 /* hw_test_lvgl.c — LVGL widget touch response test */
 int test_lvgl(int argc, char **argv);
 
+/* hw_test_button.c — GPIO button press test */
+int test_button(int argc, char **argv);
+
+/* hw_test_imu.c — QMI8658 IMU I2C test */
+int test_imu(int argc, char **argv);
+
+/* hw_test_mag.c — MMC5603 magnetometer test */
+int test_mag(int argc, char **argv);
+
+/* hw_test_als.c — LTR-308ALS ambient light sensor test */
+int test_als(int argc, char **argv);
+
+/* hw_test_baro.c — SPL06-001 barometric pressure sensor test */
+int test_baro(int argc, char **argv);
+
 /* lua_tool.c — file upload via serial console */
 esp_err_t lua_tool_register(void);
 
@@ -73,6 +88,11 @@ static const hw_test_subcmd_t s_sub_commands[] = {
     { "touch",   "Touch panel test (arg: stop)",              test_touch   },
 #endif
     { "lvgl",    "LVGL widget touch test (arg: stop)",        test_lvgl    },
+    { "button",  "Confirm button press test (GPIO poll)",      test_button  },
+    { "imu",     "QMI8658 IMU I2C read test",                   test_imu     },
+    { "mag",     "MMC5603 magnetometer test",                   test_mag     },
+    { "als",     "LTR-308ALS ambient light sensor test",        test_als     },
+    { "baro",    "SPL06-001 barometric pressure sensor test",   test_baro    },
 };
 
 /* ------------------------------------------------------------------ */
@@ -215,7 +235,7 @@ esp_err_t hw_test_cli_init(void)
 {
     esp_console_cmd_t cmd = {
         .command = "test",
-        .help = "Hardware test: test <i2c|sdcard|screen|camera|audio|touch|lvgl> [args...]",
+        .help = "Hardware test: test <i2c|sdcard|screen|camera|audio|touch|lvgl|button|imu> [args...]",
         .func = cmd_test,
     };
     esp_err_t err = esp_console_cmd_register(&cmd);

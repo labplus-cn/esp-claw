@@ -151,23 +151,49 @@ devices:
       - name: ldo_mipi                 # Shared MIPI LDO with DSI display
 
   # Sensors — I2C bus (shared with audio codec)
-  # - name: qmi8658
-  #   type: custom
-  #   chip: qmi8658
-  #   config:
-  #     sensor_type: "imu_6axis"
-  #     description: "6-axis IMU (Accelerometer + Gyroscope)"
-  #   peripherals:
-  #     - name: i2c_master
+  - name: imu_sensor
+    chip: qmi8658
+    type: custom
+    version: 1.0.0
+    init_skip: true
+    config:
+      i2c_addr: 0x6b
+      frequency: 400000
+      int_gpio_num: -1
+      sdo_gpio_num: -1
+    peripherals:
+      - name: i2c_master
 
-  # - name: ltr308als
-  #   type: custom
-  #   chip: ltr308als
-  #   config:
-  #     sensor_type: "ambient_light"
-  #     description: "Ambient Light Sensor"
-  #   peripherals:
-  #     - name: i2c_master
+  - name: ltr308als
+    type: custom
+    chip: ltr308als
+    config:
+      i2c_addr: 0x53
+      frequency: 400000
+      int_gpio_num: -1
+    peripherals:
+      - name: i2c_master
+
+  - name: mmc5603
+    type: custom
+    chip: mmc5603
+    config:
+      i2c_addr: 0x30
+      frequency: 400000
+      int_gpio_num: -1
+      sdo_gpio_num: -1
+    peripherals:
+      - name: i2c_master
+
+  - name: spl06
+    type: custom
+    chip: spl06
+    config:
+      i2c_addr: 0x76
+      frequency: 400000
+      int_gpio_num: -1
+    peripherals:
+      - name: i2c_master
 
   # Button Devices — one device per GPIO (dev_button only supports single GPIO)
   - name: confirm_button

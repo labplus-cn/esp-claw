@@ -3,6 +3,11 @@ set(_hw_test_srcs
     "hw_test_display.c"
     "hw_test_audio.c"
     "hw_test_lvgl.c"
+    "hw_test_button.c"
+    "hw_test_imu.c"
+    "hw_test_mag.c"
+    "hw_test_als.c"
+    "hw_test_baro.c"
     "lua_tool.c"
 )
 

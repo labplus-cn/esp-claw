@@ -25,6 +25,16 @@ extern "C" {
  *   test touch stop     -- stop touch test
  *   test lvgl           -- LVGL widget touch test (background)
  *   test lvgl stop      -- stop LVGL test
+ *   test button         -- confirm button GPIO press test
+ *   test button --gpio 35 --active 0 --timeout 10
+ *   test imu            -- QMI8658 IMU I2C read test
+ *   test imu --addr 0x6b --samples 10
+ *   test mag            -- MMC5603 magnetometer test
+ *   test mag --addr 0x30 --samples 10
+ *   test als            -- LTR-308ALS ambient light sensor test
+ *   test als --addr 0x29 --samples 10
+ *   test baro           -- SPL06-001 barometric pressure sensor test
+ *   test baro --addr 0x76 --samples 10
  *
  * File upload (lua_tool.c):
  *   fup <filename>      -- start upload (file goes to data root, e.g. /sdcard)

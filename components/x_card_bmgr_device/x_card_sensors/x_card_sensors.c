@@ -120,7 +120,10 @@ int qmi8658_init(void *cfg, int cfg_size, void **device_handle)
     reg_write8(dev, QMI8658_REG_CTRL1, QMI8658_CTRL1_ADDR_AI);
     reg_write8(dev, QMI8658_REG_CTRL2, QMI8658_CTRL2_16G_1K);
     reg_write8(dev, QMI8658_REG_CTRL3, QMI8658_CTRL3_2048_1K);
-    reg_write8(dev, QMI8658_REG_CTRL7, QMI8658_CTRL7_ACC_EN | QMI8658_CTRL7_GYR_EN);
+    /* CTRL7 address varies between silicon revisions (0x07 or 0x08).
+     * Write to both to cover all variants. */
+    reg_write8(dev, 0x07, QMI8658_CTRL7_ACC_EN | QMI8658_CTRL7_GYR_EN);
+    reg_write8(dev, 0x08, QMI8658_CTRL7_ACC_EN | QMI8658_CTRL7_GYR_EN);
 
     qmi8658_handle_t *hdl = calloc(1, sizeof(*hdl));
     if (!hdl) return -1;

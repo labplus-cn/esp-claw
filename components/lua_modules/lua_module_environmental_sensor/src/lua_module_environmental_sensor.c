@@ -27,6 +27,15 @@
 #include "dht.h"
 #include "driver/gpio.h"
 #endif
+#if CONFIG_LUA_MODULE_ENVIRONMENTAL_SENSOR_BACKEND_LTR308ALS || CONFIG_LUA_MODULE_ENVIRONMENTAL_SENSOR_BACKEND_SPL06
+#include "esp_board_device.h"
+#include "esp_board_manager.h"
+#include "esp_board_periph.h"
+#include "esp_check.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "i2c_bus.h"
+#endif
 #include "esp_rom_sys.h"
 #include "esp_log.h"
 #include "lauxlib.h"
@@ -34,6 +43,8 @@
 #define LUA_MODULE_ENVIRONMENTAL_SENSOR_NAME      "environmental_sensor"
 #define LUA_MODULE_ENVIRONMENTAL_SENSOR_TYPE_DHT  "dht"
 #define LUA_MODULE_ENVIRONMENTAL_SENSOR_TYPE_BME690 "bme690"
+#define LUA_MODULE_ENVIRONMENTAL_SENSOR_TYPE_LTR308ALS "ltr308als"
+#define LUA_MODULE_ENVIRONMENTAL_SENSOR_TYPE_SPL06 "spl06"
 
 #if CONFIG_LUA_MODULE_ENVIRONMENTAL_SENSOR_BACKEND_BME690
 #define LUA_MODULE_BME690_METATABLE        "environmental_sensor.device"
@@ -908,6 +919,576 @@ static void lua_module_dht_create_metatable(lua_State *L)
 }
 #endif
 
+/* ===================================================================
+ *  LTR-308ALS — Ambient Light Sensor backend
+ * =================================================================== */
+#if CONFIG_LUA_MODULE_ENVIRONMENTAL_SENSOR_BACKEND_LTR308ALS
+
+#define LTR308ALS_METATABLE        "environmental_sensor.ltr308als_device"
+#define LTR308ALS_DEFAULT_NAME     "ltr308als"
+#define LTR308ALS_MAX_NAME_LEN     64
+#define LTR308ALS_DEFAULT_FREQ_HZ  400000
+#define LTR308ALS_I2C_ADDR         0x53  /* 7-bit address (ADDR pin = VCC) */
+
+/* LTR-308ALS registers */
+#define LTR_REG_CTRL               0x00
+#define LTR_REG_MEAS_RATE          0x04
+#define LTR_REG_GAIN               0x05
+#define LTR_REG_PART_ID            0x06
+#define LTR_REG_STATUS             0x07
+#define LTR_REG_ALS_DATA0          0x0D
+#define LTR_CTRL_ACTIVE            0x02
+#define LTR_CTRL_RESET             0x10
+#define LTR_MEAS_100MS             0x22
+#define LTR_STATUS_DRDY            0x08
+#define LTR_PART_ID_VAL            0xB1
+
+typedef struct {
+    i2c_bus_handle_t i2c_bus_handle;
+    i2c_bus_device_handle_t i2c_dev_handle;
+    char peripheral_name[LTR308ALS_MAX_NAME_LEN];
+    bool peripheral_ref_held;
+    bool sensor_initialized;
+    uint8_t i2c_addr;
+    uint8_t gain_idx;
+} lua_module_ltr308als_handle_t;
+
+typedef struct {
+    const char *name;
+    const char *type;
+    const char *chip;
+    int8_t i2c_addr;
+    int32_t frequency;
+    int8_t int_gpio_num;
+    uint8_t peripheral_count;
+    const char *peripheral_name;
+} lua_ltr308als_board_cfg_t;
+
+typedef struct {
+    lua_module_ltr308als_handle_t *handle;
+    char device_name[LTR308ALS_MAX_NAME_LEN];
+} lua_module_ltr308als_ud_t;
+
+static const float ltr_gains[] = { 1.0f, 3.0f, 6.0f, 9.0f, 18.0f };
+static const char *TAG_LTR = "lua_module_ltr308als";
+
+static esp_err_t lua_ltr308als_open_bus(const char *peripheral_name, int frequency,
+                                         i2c_bus_handle_t *bus, bool *ref_held)
+{
+    i2c_master_bus_handle_t master = NULL;
+    i2c_master_bus_config_t *cfg = NULL;
+    *ref_held = false;
+    ESP_RETURN_ON_ERROR(esp_board_periph_ref_handle(peripheral_name, (void **)&master),
+                        TAG_LTR, "ref bus '%s'", peripheral_name);
+    *ref_held = true;
+    ESP_RETURN_ON_ERROR(esp_board_periph_get_config(peripheral_name, (void **)&cfg),
+                        TAG_LTR, "get bus cfg '%s'", peripheral_name);
+    const i2c_config_t i2c_cfg = {
+        .mode = I2C_MODE_MASTER,
+        .sda_io_num = cfg->sda_io_num,
+        .scl_io_num = cfg->scl_io_num,
+        .sda_pullup_en = cfg->flags.enable_internal_pullup,
+        .scl_pullup_en = cfg->flags.enable_internal_pullup,
+        .master.clk_speed = (uint32_t)frequency,
+        .clk_flags = 0,
+    };
+    *bus = i2c_bus_create(cfg->i2c_port, &i2c_cfg);
+    if (!*bus) { esp_board_periph_unref_handle(peripheral_name); *ref_held = false; return ESP_FAIL; }
+    return ESP_OK;
+}
+
+static esp_err_t lua_ltr308als_probe(lua_module_ltr308als_handle_t *hdl)
+{
+    uint8_t pid = 0;
+    esp_err_t err = i2c_bus_read_bytes(hdl->i2c_dev_handle, LTR_REG_PART_ID, 1, &pid);
+    if (err != ESP_OK) return err;
+    ESP_LOGI(TAG_LTR, "LTR-308ALS Part ID = 0x%02X (expect 0x%02X)", pid, LTR_PART_ID_VAL);
+    /* Reset */
+    ESP_RETURN_ON_ERROR(i2c_bus_write_bytes(hdl->i2c_dev_handle, LTR_REG_CTRL, 1, &(uint8_t){LTR_CTRL_RESET}),
+                        TAG_LTR, "LTR reset");
+    vTaskDelay(pdMS_TO_TICKS(100));
+    /* Configure: gain=1 (3x), meas rate=100ms */
+    hdl->gain_idx = 1;
+    ESP_RETURN_ON_ERROR(i2c_bus_write_bytes(hdl->i2c_dev_handle, LTR_REG_GAIN, 1, &hdl->gain_idx),
+                        TAG_LTR, "LTR gain");
+    ESP_RETURN_ON_ERROR(i2c_bus_write_bytes(hdl->i2c_dev_handle, LTR_REG_MEAS_RATE, 1, &(uint8_t){LTR_MEAS_100MS}),
+                        TAG_LTR, "LTR meas rate");
+    ESP_RETURN_ON_ERROR(i2c_bus_write_bytes(hdl->i2c_dev_handle, LTR_REG_CTRL, 1, &(uint8_t){LTR_CTRL_ACTIVE}),
+                        TAG_LTR, "LTR active");
+    vTaskDelay(pdMS_TO_TICKS(10));
+    hdl->sensor_initialized = true;
+    return ESP_OK;
+}
+
+static void lua_ltr308als_destroy(lua_module_ltr308als_handle_t *hdl)
+{
+    if (!hdl) return;
+    if (hdl->i2c_dev_handle) { i2c_bus_device_delete(&hdl->i2c_dev_handle); }
+    if (hdl->peripheral_ref_held && hdl->peripheral_name[0]) {
+        esp_board_periph_unref_handle(hdl->peripheral_name);
+    }
+    free(hdl);
+}
+
+static lua_module_ltr308als_ud_t *lua_ltr308als_get_ud(lua_State *L, int idx)
+{
+    lua_module_ltr308als_ud_t *ud =
+        (lua_module_ltr308als_ud_t *)luaL_checkudata(L, idx, LTR308ALS_METATABLE);
+    if (!ud || !ud->handle || !ud->handle->sensor_initialized) {
+        luaL_error(L, "environmental_sensor: invalid ltr308als handle");
+    }
+    return ud;
+}
+
+static int lua_ltr308als_read(lua_State *L)
+{
+    lua_module_ltr308als_ud_t *ud = lua_ltr308als_get_ud(L, 1);
+    lua_module_ltr308als_handle_t *hdl = ud->handle;
+    uint8_t status = 0;
+    if (i2c_bus_read_bytes(hdl->i2c_dev_handle, LTR_REG_STATUS, 1, &status) != ESP_OK) {
+        return luaL_error(L, "ltr308als status read failed");
+    }
+    if (!(status & LTR_STATUS_DRDY)) {
+        lua_newtable(L);
+        lua_pushnumber(L, 0);
+        lua_setfield(L, -2, "lux");
+        return 1;
+    }
+    uint8_t raw[3] = { 0 };
+    if (i2c_bus_read_bytes(hdl->i2c_dev_handle, LTR_REG_ALS_DATA0, 3, raw) != ESP_OK) {
+        return luaL_error(L, "ltr308als data read failed");
+    }
+    uint32_t als_raw = raw[0] | ((uint32_t)raw[1] << 8) | ((uint32_t)raw[2] << 16);
+    float lux = als_raw * 0.6f / ltr_gains[hdl->gain_idx];
+    lua_newtable(L);
+    lua_pushnumber(L, lux);
+    lua_setfield(L, -2, "lux");
+    return 1;
+}
+
+static int lua_ltr308als_read_lux(lua_State *L)
+{
+    lua_module_ltr308als_ud_t *ud = lua_ltr308als_get_ud(L, 1);
+    lua_module_ltr308als_handle_t *hdl = ud->handle;
+    uint8_t status = 0;
+    i2c_bus_read_bytes(hdl->i2c_dev_handle, LTR_REG_STATUS, 1, &status);
+    if (!(status & LTR_STATUS_DRDY)) { lua_pushnumber(L, 0); return 1; }
+    uint8_t raw[3] = { 0 };
+    if (i2c_bus_read_bytes(hdl->i2c_dev_handle, LTR_REG_ALS_DATA0, 3, raw) != ESP_OK) {
+        return luaL_error(L, "ltr308als read_lux failed");
+    }
+    uint32_t als_raw = raw[0] | ((uint32_t)raw[1] << 8) | ((uint32_t)raw[2] << 16);
+    lua_pushnumber(L, als_raw * 0.6f / ltr_gains[hdl->gain_idx]);
+    return 1;
+}
+
+static int lua_ltr308als_name(lua_State *L) { lua_ltr308als_get_ud(L, 1); lua_pushstring(L, "ltr308als"); return 1; }
+static int lua_ltr308als_close(lua_State *L)
+{
+    lua_module_ltr308als_ud_t *ud = lua_ltr308als_get_ud(L, 1);
+    if (ud->handle) { lua_ltr308als_destroy(ud->handle); ud->handle = NULL; }
+    return 0;
+}
+static int lua_ltr308als_gc(lua_State *L)
+{
+    lua_module_ltr308als_ud_t *ud = (lua_module_ltr308als_ud_t *)luaL_testudata(L, 1, LTR308ALS_METATABLE);
+    if (ud && ud->handle) { lua_ltr308als_destroy(ud->handle); ud->handle = NULL; }
+    return 0;
+}
+
+static esp_err_t lua_ltr308als_resolve_board_cfg(const char *device_name, lua_ltr308als_board_cfg_t **out)
+{
+    extern const esp_board_device_desc_t g_esp_board_devices[];
+    const esp_board_device_desc_t *d = g_esp_board_devices;
+    while (d && d->name) {
+        if (strcmp(d->name, device_name) == 0) {
+            if (!d->cfg) return ESP_ERR_NOT_FOUND;
+            if (d->cfg_size != sizeof(lua_ltr308als_board_cfg_t)) return ESP_ERR_INVALID_SIZE;
+            *out = (lua_ltr308als_board_cfg_t *)d->cfg;
+            return ESP_OK;
+        }
+        d = d->next;
+    }
+    return ESP_ERR_NOT_FOUND;
+}
+
+static int lua_ltr308als_new(lua_State *L)
+{
+    const char *dev_name = LTR308ALS_DEFAULT_NAME;
+    if (lua_isstring(L, 1)) dev_name = lua_tostring(L, 1);
+    lua_ltr308als_board_cfg_t *board = NULL;
+    esp_err_t err = lua_ltr308als_resolve_board_cfg(dev_name, &board);
+    if (err == ESP_ERR_INVALID_SIZE) return luaL_error(L, "ltr308als cfg_size mismatch for '%s'", dev_name);
+    const char *periph = NULL;
+    int i2c_addr = LTR308ALS_I2C_ADDR;
+    int freq = LTR308ALS_DEFAULT_FREQ_HZ;
+    if (board) {
+        if (board->peripheral_name && board->peripheral_name[0]) periph = board->peripheral_name;
+        if (board->i2c_addr) i2c_addr = board->i2c_addr;
+        if (board->frequency > 0) freq = board->frequency;
+    }
+    /* Lua overrides */
+    int opts_idx = lua_istable(L, 2) ? 2 : (lua_istable(L, 1) ? 1 : 0);
+    if (opts_idx) {
+        lua_getfield(L, opts_idx, "peripheral");
+        if (lua_isstring(L, -1)) periph = lua_tostring(L, -1);
+        lua_pop(L, 1);
+        lua_getfield(L, opts_idx, "i2c_addr");
+        if (lua_isnumber(L, -1)) i2c_addr = (int)lua_tointeger(L, -1);
+        lua_pop(L, 1);
+    }
+    if (!periph) return luaL_error(L, "ltr308als.new: missing 'peripheral'");
+    lua_module_ltr308als_handle_t *hdl = calloc(1, sizeof(*hdl));
+    if (!hdl) return luaL_error(L, "ltr308als: OOM");
+    snprintf(hdl->peripheral_name, sizeof(hdl->peripheral_name), "%s", periph);
+    err = lua_ltr308als_open_bus(periph, freq, &hdl->i2c_bus_handle, &hdl->peripheral_ref_held);
+    if (err != ESP_OK) { free(hdl); return luaL_error(L, "ltr308als: bus open failed"); }
+    hdl->i2c_dev_handle = i2c_bus_device_create(hdl->i2c_bus_handle, (uint8_t)i2c_addr, 0);
+    if (!hdl->i2c_dev_handle) { lua_ltr308als_destroy(hdl); return luaL_error(L, "ltr308als: dev create failed"); }
+    hdl->i2c_addr = (uint8_t)i2c_addr;
+    err = lua_ltr308als_probe(hdl);
+    if (err != ESP_OK) { lua_ltr308als_destroy(hdl); return luaL_error(L, "ltr308als: probe failed"); }
+    lua_module_ltr308als_ud_t *ud = (lua_module_ltr308als_ud_t *)lua_newuserdata(L, sizeof(*ud));
+    memset(ud, 0, sizeof(*ud));
+    ud->handle = hdl;
+    snprintf(ud->device_name, sizeof(ud->device_name), "%s", dev_name);
+    luaL_getmetatable(L, LTR308ALS_METATABLE);
+    lua_setmetatable(L, -2);
+    return 1;
+}
+
+static void lua_ltr308als_create_metatable(lua_State *L)
+{
+    if (luaL_newmetatable(L, LTR308ALS_METATABLE)) {
+        lua_pushcfunction(L, lua_ltr308als_gc); lua_setfield(L, -2, "__gc");
+        lua_pushvalue(L, -1); lua_setfield(L, -2, "__index");
+        lua_pushcfunction(L, lua_ltr308als_read); lua_setfield(L, -2, "read");
+        lua_pushcfunction(L, lua_ltr308als_read_lux); lua_setfield(L, -2, "read_lux");
+        lua_pushcfunction(L, lua_ltr308als_name); lua_setfield(L, -2, "name");
+        lua_pushcfunction(L, lua_ltr308als_close); lua_setfield(L, -2, "close");
+    }
+    lua_pop(L, 1);
+}
+#endif /* CONFIG_LUA_MODULE_ENVIRONMENTAL_SENSOR_BACKEND_LTR308ALS */
+
+/* ===================================================================
+ *  SPL06-001 — Barometric Pressure Sensor backend
+ * =================================================================== */
+#if CONFIG_LUA_MODULE_ENVIRONMENTAL_SENSOR_BACKEND_SPL06
+
+#define SPL06_METATABLE        "environmental_sensor.spl06_device"
+#define SPL06_DEFAULT_NAME     "spl06"
+#define SPL06_MAX_NAME_LEN     64
+#define SPL06_DEFAULT_FREQ_HZ  400000
+#define SPL06_I2C_ADDR_LOW     0x76
+#define SPL06_I2C_ADDR_HIGH    0x77
+
+/* SPL06-001 registers */
+#define SPL06_REG_PSR_B2       0x00  /* Pressure MSB */
+#define SPL06_REG_PSR_B1       0x01
+#define SPL06_REG_PSR_B0       0x02  /* Pressure LSB */
+#define SPL06_REG_TMP_B2       0x03  /* Temperature MSB */
+#define SPL06_REG_TMP_B1       0x04
+#define SPL06_REG_TMP_B0       0x05  /* Temperature LSB */
+#define SPL06_REG_PRS_CFG      0x06
+#define SPL06_REG_TMP_CFG      0x07
+#define SPL06_REG_MEAS_CFG     0x08
+#define SPL06_REG_CFG_REG      0x09
+#define SPL06_REG_INT_STS      0x0A
+#define SPL06_REG_FIFO_STS     0x0B
+#define SPL06_REG_RESET        0x0C
+#define SPL06_REG_ID           0x0D
+#define SPL06_REG_COEF_BASE    0x10  /* Calibration coefficients start */
+#define SPL06_REG_COEF_SR      0x28  /* Source register for temp (c00/c10 sign) */
+
+#define SPL06_CHIP_ID          0x10  /* SPL06-001 may report 0x10 or 0x11 */
+#define SPL06_CHIP_ID_ALT      0x11
+#define SPL06_RESET_VAL        0x89
+
+typedef struct {
+    int16_t c0, c1;
+    int32_t c00, c10;
+    int16_t c01, c11, c20, c21, c30;
+} spl06_calib_t;
+
+typedef struct {
+    i2c_bus_handle_t i2c_bus_handle;
+    i2c_bus_device_handle_t i2c_dev_handle;
+    char peripheral_name[SPL06_MAX_NAME_LEN];
+    bool peripheral_ref_held;
+    bool sensor_initialized;
+    uint8_t i2c_addr;
+    spl06_calib_t calib;
+} lua_module_spl06_handle_t;
+
+typedef struct {
+    const char *name;
+    const char *type;
+    const char *chip;
+    int8_t i2c_addr;
+    int32_t frequency;
+    int8_t int_gpio_num;
+    uint8_t peripheral_count;
+    const char *peripheral_name;
+} lua_spl06_board_cfg_t;
+
+typedef struct {
+    lua_module_spl06_handle_t *handle;
+    char device_name[SPL06_MAX_NAME_LEN];
+} lua_module_spl06_ud_t;
+
+static const char *TAG_SPL06 = "lua_module_spl06";
+
+static esp_err_t spl06_write(lua_module_spl06_handle_t *hdl, uint8_t reg, uint8_t val)
+{
+    return i2c_bus_write_bytes(hdl->i2c_dev_handle, reg, 1, &val);
+}
+
+static esp_err_t spl06_read(lua_module_spl06_handle_t *hdl, uint8_t reg, uint8_t *buf, size_t len)
+{
+    return i2c_bus_read_bytes(hdl->i2c_dev_handle, reg, len, buf);
+}
+
+static esp_err_t spl06_read_calib(lua_module_spl06_handle_t *hdl)
+{
+    uint8_t coef[19] = { 0 };
+    ESP_RETURN_ON_ERROR(spl06_read(hdl, SPL06_REG_COEF_BASE, coef, 19), TAG_SPL06, "read coef");
+    spl06_calib_t *c = &hdl->calib;
+    /* c0: 12-bit signed */
+    c->c0 = (int16_t)(((uint16_t)coef[0] << 4) | ((coef[1] >> 4) & 0x0F));
+    if (c->c0 & 0x800) c->c0 |= 0xF000;
+    /* c1: 12-bit signed */
+    c->c1 = (int16_t)(((uint16_t)(coef[1] & 0x0F) << 8) | coef[2]);
+    if (c->c1 & 0x800) c->c1 |= 0xF000;
+    /* c00: 18-bit signed */
+    c->c00 = (int32_t)(((int32_t)(coef[3] & 0x7F) << 16) | ((uint32_t)coef[4] << 8) | coef[5]);
+    if (c->c00 & 0x80000) c->c00 |= 0xFFF00000;
+    /* c10: 18-bit signed (4 bits + 2 bytes) */
+    c->c10 = (int32_t)(((int32_t)(coef[6] & 0x0F) << 16) | ((uint32_t)coef[7] << 8) | coef[8]);
+    if (c->c10 & 0x80000) c->c10 |= 0xFFF00000;
+    /* c01..c30: 16-bit signed */
+    c->c01 = (int16_t)(((uint16_t)coef[9] << 8) | coef[10]);
+    c->c11 = (int16_t)(((uint16_t)coef[11] << 8) | coef[12]);
+    c->c20 = (int16_t)(((uint16_t)coef[13] << 8) | coef[14]);
+    c->c21 = (int16_t)(((uint16_t)coef[15] << 8) | coef[16]);
+    c->c30 = (int16_t)(((uint16_t)coef[17] << 8) | coef[18]);
+    return ESP_OK;
+}
+
+static esp_err_t spl06_open_bus(const char *periph, int freq, i2c_bus_handle_t *bus, bool *ref)
+{
+    i2c_master_bus_handle_t master = NULL;
+    i2c_master_bus_config_t *cfg = NULL;
+    *ref = false;
+    ESP_RETURN_ON_ERROR(esp_board_periph_ref_handle(periph, (void **)&master), TAG_SPL06, "ref");
+    *ref = true;
+    ESP_RETURN_ON_ERROR(esp_board_periph_get_config(periph, (void **)&cfg), TAG_SPL06, "cfg");
+    const i2c_config_t i2c_cfg = {
+        .mode = I2C_MODE_MASTER, .sda_io_num = cfg->sda_io_num, .scl_io_num = cfg->scl_io_num,
+        .sda_pullup_en = cfg->flags.enable_internal_pullup, .scl_pullup_en = cfg->flags.enable_internal_pullup,
+        .master.clk_speed = (uint32_t)freq, .clk_flags = 0,
+    };
+    *bus = i2c_bus_create(cfg->i2c_port, &i2c_cfg);
+    if (!*bus) { esp_board_periph_unref_handle(periph); *ref = false; return ESP_FAIL; }
+    return ESP_OK;
+}
+
+static void spl06_destroy(lua_module_spl06_handle_t *hdl)
+{
+    if (!hdl) return;
+    if (hdl->i2c_dev_handle) i2c_bus_device_delete(&hdl->i2c_dev_handle);
+    if (hdl->peripheral_ref_held && hdl->peripheral_name[0]) esp_board_periph_unref_handle(hdl->peripheral_name);
+    free(hdl);
+}
+
+static esp_err_t spl06_probe(lua_module_spl06_handle_t *hdl)
+{
+    uint8_t chip_id = 0;
+    ESP_RETURN_ON_ERROR(spl06_read(hdl, SPL06_REG_ID, &chip_id, 1), TAG_SPL06, "ID read");
+    if (chip_id != SPL06_CHIP_ID && chip_id != SPL06_CHIP_ID_ALT) {
+        ESP_LOGE(TAG_SPL06, "SPL06 chip_id=0x%02x (expect 0x%02x or 0x%02x)", chip_id, SPL06_CHIP_ID, SPL06_CHIP_ID_ALT);
+        return ESP_ERR_NOT_FOUND;
+    }
+    /* Configure: pressure 8x oversample, 32 measurements/sec */
+    ESP_RETURN_ON_ERROR(spl06_write(hdl, SPL06_REG_PRS_CFG, 0x05), TAG_SPL06, "PRS_CFG");
+    /* Temperature 8x oversample, 32 measurements/sec, use internal sensor */
+    ESP_RETURN_ON_ERROR(spl06_write(hdl, SPL06_REG_TMP_CFG, 0x85), TAG_SPL06, "TMP_CFG");
+    /* Background mode (continuous measurement) */
+    ESP_RETURN_ON_ERROR(spl06_write(hdl, SPL06_REG_MEAS_CFG, 0x07), TAG_SPL06, "MEAS_CFG");
+    /* Read calibration coefficients */
+    ESP_RETURN_ON_ERROR(spl06_read_calib(hdl), TAG_SPL06, "calib");
+    hdl->sensor_initialized = true;
+    ESP_LOGI(TAG_SPL06, "SPL06-001 ready, chip_id=0x%02x", chip_id);
+    return ESP_OK;
+}
+
+static esp_err_t spl06_read_raw(lua_module_spl06_handle_t *hdl, int32_t *raw_temp, int32_t *raw_pres)
+{
+    uint8_t buf[3] = { 0 };
+    /* Read temperature (24-bit signed) */
+    ESP_RETURN_ON_ERROR(spl06_read(hdl, SPL06_REG_TMP_B2, buf, 3), TAG_SPL06, "TMP read");
+    *raw_temp = (int32_t)((buf[0] << 16) | (buf[1] << 8) | buf[2]);
+    if (*raw_temp & 0x800000) *raw_temp |= 0xFF000000;  /* sign extend 24-bit */
+    /* Read pressure (24-bit signed) */
+    ESP_RETURN_ON_ERROR(spl06_read(hdl, SPL06_REG_PSR_B2, buf, 3), TAG_SPL06, "PRS read");
+    *raw_pres = (int32_t)((buf[0] << 16) | (buf[1] << 8) | buf[2]);
+    if (*raw_pres & 0x800000) *raw_pres |= 0xFF000000;
+    return ESP_OK;
+}
+
+static void spl06_compensate(lua_module_spl06_handle_t *hdl, int32_t raw_t, int32_t raw_p,
+                              float *out_temp, float *out_pres)
+{
+    spl06_calib_t *c = &hdl->calib;
+    /* Oversampling rate factor (8x OSR -> k = 36400.0 for temp, 36400.0 for pres at 8x) */
+    float kT = 36400.0f;
+    float kP = 36400.0f;
+    float Traw_sc = (float)raw_t / kT;
+    float Praw_sc = (float)raw_p / kP;
+    /* Compensated temperature */
+    float Tcomp = c->c0 * 0.5f + c->c1 * Traw_sc;
+    /* Compensated pressure */
+    float Pcomp = c->c00 + Praw_sc * (c->c10 + Praw_sc * (c->c01 + Praw_sc * c->c11)) +
+                  Traw_sc * c->c20 + Traw_sc * Praw_sc * (c->c21 + Praw_sc * c->c30);
+    *out_temp = Tcomp;
+    *out_pres = Pcomp;  /* in Pa */
+}
+
+static lua_module_spl06_ud_t *lua_spl06_get_ud(lua_State *L, int idx)
+{
+    lua_module_spl06_ud_t *ud = (lua_module_spl06_ud_t *)luaL_checkudata(L, idx, SPL06_METATABLE);
+    if (!ud || !ud->handle || !ud->handle->sensor_initialized)
+        luaL_error(L, "environmental_sensor: invalid spl06 handle");
+    return ud;
+}
+
+static int lua_spl06_read(lua_State *L)
+{
+    lua_module_spl06_ud_t *ud = lua_spl06_get_ud(L, 1);
+    int32_t raw_t = 0, raw_p = 0;
+    if (spl06_read_raw(ud->handle, &raw_t, &raw_p) != ESP_OK)
+        return luaL_error(L, "spl06 read failed");
+    float temp = 0, pres = 0;
+    spl06_compensate(ud->handle, raw_t, raw_p, &temp, &pres);
+    lua_newtable(L);
+    lua_pushnumber(L, temp); lua_setfield(L, -2, "temperature");
+    lua_pushnumber(L, pres); lua_setfield(L, -2, "pressure");
+    return 1;
+}
+
+static int lua_spl06_read_temperature(lua_State *L)
+{
+    lua_module_spl06_ud_t *ud = lua_spl06_get_ud(L, 1);
+    int32_t raw_t = 0, raw_p = 0;
+    if (spl06_read_raw(ud->handle, &raw_t, &raw_p) != ESP_OK)
+        return luaL_error(L, "spl06 read_temperature failed");
+    float temp = 0, pres = 0;
+    spl06_compensate(ud->handle, raw_t, raw_p, &temp, &pres);
+    lua_pushnumber(L, temp);
+    return 1;
+}
+
+static int lua_spl06_read_pressure(lua_State *L)
+{
+    lua_module_spl06_ud_t *ud = lua_spl06_get_ud(L, 1);
+    int32_t raw_t = 0, raw_p = 0;
+    if (spl06_read_raw(ud->handle, &raw_t, &raw_p) != ESP_OK)
+        return luaL_error(L, "spl06 read_pressure failed");
+    float temp = 0, pres = 0;
+    spl06_compensate(ud->handle, raw_t, raw_p, &temp, &pres);
+    lua_pushnumber(L, pres);
+    return 1;
+}
+
+static int lua_spl06_name(lua_State *L) { lua_spl06_get_ud(L, 1); lua_pushstring(L, "spl06"); return 1; }
+static int lua_spl06_close(lua_State *L)
+{
+    lua_module_spl06_ud_t *ud = lua_spl06_get_ud(L, 1);
+    if (ud->handle) { spl06_destroy(ud->handle); ud->handle = NULL; }
+    return 0;
+}
+static int lua_spl06_gc(lua_State *L)
+{
+    lua_module_spl06_ud_t *ud = (lua_module_spl06_ud_t *)luaL_testudata(L, 1, SPL06_METATABLE);
+    if (ud && ud->handle) { spl06_destroy(ud->handle); ud->handle = NULL; }
+    return 0;
+}
+
+static esp_err_t lua_spl06_resolve_board_cfg(const char *device_name, lua_spl06_board_cfg_t **out)
+{
+    extern const esp_board_device_desc_t g_esp_board_devices[];
+    const esp_board_device_desc_t *d = g_esp_board_devices;
+    while (d && d->name) {
+        if (strcmp(d->name, device_name) == 0) {
+            if (!d->cfg) return ESP_ERR_NOT_FOUND;
+            if (d->cfg_size != sizeof(lua_spl06_board_cfg_t)) return ESP_ERR_INVALID_SIZE;
+            *out = (lua_spl06_board_cfg_t *)d->cfg;
+            return ESP_OK;
+        }
+        d = d->next;
+    }
+    return ESP_ERR_NOT_FOUND;
+}
+
+static int lua_spl06_new(lua_State *L)
+{
+    const char *dev_name = SPL06_DEFAULT_NAME;
+    if (lua_isstring(L, 1)) dev_name = lua_tostring(L, 1);
+    lua_spl06_board_cfg_t *board = NULL;
+    esp_err_t err = lua_spl06_resolve_board_cfg(dev_name, &board);
+    if (err == ESP_ERR_INVALID_SIZE) return luaL_error(L, "spl06 cfg_size mismatch for '%s'", dev_name);
+    const char *periph = NULL;
+    int i2c_addr = SPL06_I2C_ADDR_LOW;
+    int freq = SPL06_DEFAULT_FREQ_HZ;
+    if (board) {
+        if (board->peripheral_name && board->peripheral_name[0]) periph = board->peripheral_name;
+        if (board->i2c_addr) i2c_addr = board->i2c_addr;
+        if (board->frequency > 0) freq = board->frequency;
+    }
+    int opts_idx = lua_istable(L, 2) ? 2 : (lua_istable(L, 1) ? 1 : 0);
+    if (opts_idx) {
+        lua_getfield(L, opts_idx, "peripheral");
+        if (lua_isstring(L, -1)) periph = lua_tostring(L, -1);
+        lua_pop(L, 1);
+        lua_getfield(L, opts_idx, "i2c_addr");
+        if (lua_isnumber(L, -1)) i2c_addr = (int)lua_tointeger(L, -1);
+        lua_pop(L, 1);
+    }
+    if (!periph) return luaL_error(L, "spl06.new: missing 'peripheral'");
+    lua_module_spl06_handle_t *hdl = calloc(1, sizeof(*hdl));
+    if (!hdl) return luaL_error(L, "spl06: OOM");
+    snprintf(hdl->peripheral_name, sizeof(hdl->peripheral_name), "%s", periph);
+    err = spl06_open_bus(periph, freq, &hdl->i2c_bus_handle, &hdl->peripheral_ref_held);
+    if (err != ESP_OK) { free(hdl); return luaL_error(L, "spl06: bus open failed"); }
+    hdl->i2c_dev_handle = i2c_bus_device_create(hdl->i2c_bus_handle, (uint8_t)i2c_addr, 0);
+    if (!hdl->i2c_dev_handle) { spl06_destroy(hdl); return luaL_error(L, "spl06: dev create failed"); }
+    hdl->i2c_addr = (uint8_t)i2c_addr;
+    err = spl06_probe(hdl);
+    if (err != ESP_OK) { spl06_destroy(hdl); return luaL_error(L, "spl06: probe failed"); }
+    lua_module_spl06_ud_t *ud = (lua_module_spl06_ud_t *)lua_newuserdata(L, sizeof(*ud));
+    memset(ud, 0, sizeof(*ud));
+    ud->handle = hdl;
+    snprintf(ud->device_name, sizeof(ud->device_name), "%s", dev_name);
+    luaL_getmetatable(L, SPL06_METATABLE);
+    lua_setmetatable(L, -2);
+    return 1;
+}
+
+static void lua_spl06_create_metatable(lua_State *L)
+{
+    if (luaL_newmetatable(L, SPL06_METATABLE)) {
+        lua_pushcfunction(L, lua_spl06_gc); lua_setfield(L, -2, "__gc");
+        lua_pushvalue(L, -1); lua_setfield(L, -2, "__index");
+        lua_pushcfunction(L, lua_spl06_read); lua_setfield(L, -2, "read");
+        lua_pushcfunction(L, lua_spl06_read_temperature); lua_setfield(L, -2, "read_temperature");
+        lua_pushcfunction(L, lua_spl06_read_pressure); lua_setfield(L, -2, "read_pressure");
+        lua_pushcfunction(L, lua_spl06_name); lua_setfield(L, -2, "name");
+        lua_pushcfunction(L, lua_spl06_close); lua_setfield(L, -2, "close");
+    }
+    lua_pop(L, 1);
+}
+#endif /* CONFIG_LUA_MODULE_ENVIRONMENTAL_SENSOR_BACKEND_SPL06 */
+
 #if CONFIG_LUA_MODULE_ENVIRONMENTAL_SENSOR_BACKEND_BME690
 static void lua_module_environmental_sensor_create_bme690_metatable(lua_State *L)
 {
@@ -996,6 +1577,22 @@ static int lua_module_environmental_sensor_new(lua_State *L)
 #endif
     }
 
+    if (strcmp(backend_type, LUA_MODULE_ENVIRONMENTAL_SENSOR_TYPE_LTR308ALS) == 0) {
+#if CONFIG_LUA_MODULE_ENVIRONMENTAL_SENSOR_BACKEND_LTR308ALS
+        return lua_ltr308als_new(L);
+#else
+        return luaL_error(L, "environmental_sensor backend '%s' is not enabled in menuconfig", backend_type);
+#endif
+    }
+
+    if (strcmp(backend_type, LUA_MODULE_ENVIRONMENTAL_SENSOR_TYPE_SPL06) == 0) {
+#if CONFIG_LUA_MODULE_ENVIRONMENTAL_SENSOR_BACKEND_SPL06
+        return lua_spl06_new(L);
+#else
+        return luaL_error(L, "environmental_sensor backend '%s' is not enabled in menuconfig", backend_type);
+#endif
+    }
+
     return luaL_error(L, "environmental_sensor.new: unsupported type '%s'", backend_type);
 }
 
@@ -1006,6 +1603,12 @@ int luaopen_environmental_sensor(lua_State *L)
 #endif
 #if CONFIG_LUA_MODULE_ENVIRONMENTAL_SENSOR_BACKEND_DHT
     lua_module_dht_create_metatable(L);
+#endif
+#if CONFIG_LUA_MODULE_ENVIRONMENTAL_SENSOR_BACKEND_LTR308ALS
+    lua_ltr308als_create_metatable(L);
+#endif
+#if CONFIG_LUA_MODULE_ENVIRONMENTAL_SENSOR_BACKEND_SPL06
+    lua_spl06_create_metatable(L);
 #endif
 
     lua_newtable(L);
