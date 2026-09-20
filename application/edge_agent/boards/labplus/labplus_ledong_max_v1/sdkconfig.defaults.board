@@ -53,3 +53,8 @@ CONFIG_ETHERNET_PHY_RST_GPIO=-1
 
 CONFIG_SLAVE_IDF_TARGET_ESP32C5=y
 CONFIG_ESP_HOSTED_SDIO_GPIO_RESET_SLAVE=100
+
+# Console over USB Serial JTAG (primary) so the REPL and ``test``
+# command are accessible through the same USB cable used for flashing.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y

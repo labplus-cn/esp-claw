@@ -73,7 +73,7 @@ devices:
     dependencies:
       espressif/esp_lcd_st7701: "2.0.2"
     config:
-      reset_gpio_num: 5
+      reset_gpio_num: 28
       rgb_ele_order: LCD_RGB_ELEMENT_ORDER_RGB
       bits_per_pixel: 24
       reset_active_high: 0
@@ -123,7 +123,7 @@ devices:
         x_max: 480
         y_max: 854
         rst_gpio_num: 6                   # IO6 - Touch reset
-        int_gpio_num: 21                  # IO21 - Touch interrupt
+        int_gpio_num: 5                  # IO21 - Touch interrupt
         levels:
           reset: 0                        # Active low
           interrupt: 0                    # Active low
