@@ -25,6 +25,8 @@ void gc_collect(void)
 #elif CONFIG_IDF_TARGET_ARCH_XTENSA
 
 #include "xtensa/hal.h"
+#include "xtensa/config/core-isa.h"
+#include "esp_cpu.h"
 
 static void gc_collect_inner(volatile unsigned int level)
 {

@@ -1,12 +1,22 @@
+set(_hw_test_srcs
+    "hw_test_cli.c"
+    "hw_test_display.c"
+    "hw_test_audio.c"
+    "hw_test_lvgl.c"
+    "lua_tool.c"
+)
+
+if(CONFIG_ESP_BOARD_DEV_CAMERA_SUPPORT)
+    list(APPEND _hw_test_srcs "hw_test_camera.c")
+endif()
+
+if(CONFIG_ESP_BOARD_DEV_LCD_TOUCH_SUPPORT)
+    list(APPEND _hw_test_srcs "hw_test_touch.c")
+endif()
+
 idf_component_register(
     SRCS
-        "hw_test_cli.c"
-        "hw_test_display.c"
-        "hw_test_camera.c"
-        "hw_test_audio.c"
-        "hw_test_touch.c"
-        "hw_test_lvgl.c"
-        "lua_tool.c"
+        ${_hw_test_srcs}
     INCLUDE_DIRS
         "."
     PRIV_REQUIRES

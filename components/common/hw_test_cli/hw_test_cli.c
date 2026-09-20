@@ -30,13 +30,17 @@ int test_sdcard(int argc, char **argv);
 int test_screen(int argc, char **argv);
 
 /* hw_test_camera.c — camera preview on LCD */
+#if CONFIG_ESP_BOARD_DEV_CAMERA_SUPPORT
 int test_camera(int argc, char **argv);
+#endif
 
 /* hw_test_audio.c — audio playback / record / echo */
 int test_audio(int argc, char **argv);
 
 /* hw_test_touch.c — touch panel crosshair test */
+#if CONFIG_ESP_BOARD_DEV_LCD_TOUCH_SUPPORT
 int test_touch(int argc, char **argv);
+#endif
 
 /* hw_test_lvgl.c — LVGL widget touch response test */
 int test_lvgl(int argc, char **argv);
@@ -61,9 +65,13 @@ static const hw_test_subcmd_t s_sub_commands[] = {
     { "i2c",     "Scan I2C bus for devices",                test_i2c     },
     { "sdcard",  "SD card write / read / verify",           test_sdcard  },
     { "screen",  "Draw RGB color blocks on LCD",            test_screen  },
+#if CONFIG_ESP_BOARD_DEV_CAMERA_SUPPORT
     { "camera",  "Camera preview on LCD (arg: stop)",       test_camera  },
+#endif
     { "audio",   "Record mic then play back through speaker", test_audio   },
+#if CONFIG_ESP_BOARD_DEV_LCD_TOUCH_SUPPORT
     { "touch",   "Touch panel test (arg: stop)",              test_touch   },
+#endif
     { "lvgl",    "LVGL widget touch test (arg: stop)",        test_lvgl    },
 };
 
