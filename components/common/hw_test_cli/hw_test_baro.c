@@ -25,6 +25,7 @@ static const char *TAG = "test_baro";
 #define SPL06_REG_PRS_CFG   0x06
 #define SPL06_REG_TMP_CFG   0x07
 #define SPL06_REG_MEAS_CFG  0x08
+#define SPL06_REG_CFG_REG   0x09
 #define SPL06_REG_ID        0x0D
 #define SPL06_REG_COEF_BASE 0x10
 
@@ -33,9 +34,30 @@ static const char *TAG = "test_baro";
 #define SPL06_I2C_TIMEOUT_MS 100
 #define SPL06_SETTLE_MS     200
 
+/* MEAS_CFG(0x08) status bits (datasheet) */
+#define SPL06_MEAS_COEF_RDY    0x80  /* bit7: calibration coefficients ready */
+#define SPL06_MEAS_SENSOR_RDY  0x40  /* bit6: sensor initialization complete */
+#define SPL06_MEAS_TMP_RDY     0x20  /* bit5: temperature data ready */
+#define SPL06_MEAS_PRS_RDY     0x10  /* bit4: pressure data ready */
+#define SPL06_MEAS_CTRL_BG_PT  0x07  /* bits[2:0]=111: continuous pressure + temperature */
+
+/*
+ * Config values per datasheet.
+ * PM_PRC/TMP_PRC = 0011 -> 8x oversampling (NO P_SHIFT/T_SHIFT required).
+ * Rate = 011 -> 8 measurements/s. TMP_EXT(bit7)=1 (MEMS on-chip temp sensor).
+ * NOTE: PM_PRC=0101 would be 32x, which requires P_SHIFT/T_SHIFT in CFG_REG
+ * and a different scale factor (516096). We intentionally stay at 8x.
+ */
+#define SPL06_PRS_CFG_8X   0x33  /* PM_RATE=011(8/s) | PM_PRC=0011(8x) */
+#define SPL06_TMP_CFG_8X   0xB3  /* TMP_EXT=1 | TMP_RATE=011(8/s) | TMP_PRC=011(8x) */
+#define SPL06_CFG_REG_NOSHIFT 0x00  /* no shift at 8x oversampling */
+
+/* Scale factor for 8x oversampling (datasheet scaling-factor table) */
+#define SPL06_SCALE_8X      7864320.0f
+
 typedef struct {
     int16_t c0, c1;
-    int32_t c00, c10;
+    int32_t c00, c10;   /* 20-bit signed */
     int16_t c01, c11, c20, c21, c30;
 } spl06_calib_t;
 
@@ -71,8 +93,9 @@ static esp_err_t baro_read(i2c_master_dev_handle_t dev, uint8_t reg, uint8_t *da
 
 static esp_err_t spl06_read_calib(i2c_master_dev_handle_t dev, spl06_calib_t *c)
 {
-    uint8_t coef[19] = { 0 };
-    esp_err_t err = baro_read(dev, SPL06_REG_COEF_BASE, coef, 19);
+    /* Coefficients occupy registers 0x10..0x21 = 18 bytes */
+    uint8_t coef[18] = { 0 };
+    esp_err_t err = baro_read(dev, SPL06_REG_COEF_BASE, coef, 18);
     if (err != ESP_OK) return err;
 
     /* c0: 12-bit signed (coef[0] << 4 | coef[1] >> 4) */
@@ -81,18 +104,18 @@ static esp_err_t spl06_read_calib(i2c_master_dev_handle_t dev, spl06_calib_t *c)
     /* c1: 12-bit signed (coef[1] low 4 bits << 8 | coef[2]) */
     c->c1 = (int16_t)(((uint16_t)(coef[1] & 0x0F) << 8) | coef[2]);
     if (c->c1 & 0x800) c->c1 |= 0xF000;
-    /* c00: 18-bit signed (coef[3] low 7 bits << 16 | coef[4] << 8 | coef[5]) */
-    c->c00 = (int32_t)(((int32_t)(coef[3] & 0x7F) << 16) | ((uint32_t)coef[4] << 8) | coef[5]);
+    /* c00: 20-bit signed (coef[3] << 12 | coef[4] << 4 | coef[5] >> 4) */
+    c->c00 = (int32_t)(((uint32_t)coef[3] << 12) | ((uint32_t)coef[4] << 4) | ((coef[5] >> 4) & 0x0F));
     if (c->c00 & 0x80000) c->c00 |= 0xFFF00000;
-    /* c10: 18-bit signed (coef[6] low 3 bits << 16 | coef[7] << 8 | coef[8]) */
-    c->c10 = (int32_t)(((int32_t)(coef[6] & 0x0F) << 16) | ((uint32_t)coef[7] << 8) | coef[8]);
+    /* c10: 20-bit signed (coef[5] low 4 bits << 16 | coef[6] << 8 | coef[7]) */
+    c->c10 = (int32_t)(((uint32_t)(coef[5] & 0x0F) << 16) | ((uint32_t)coef[6] << 8) | coef[7]);
     if (c->c10 & 0x80000) c->c10 |= 0xFFF00000;
     /* c01..c30: 16-bit signed */
-    c->c01 = (int16_t)(((uint16_t)coef[9] << 8) | coef[10]);
-    c->c11 = (int16_t)(((uint16_t)coef[11] << 8) | coef[12]);
-    c->c20 = (int16_t)(((uint16_t)coef[13] << 8) | coef[14]);
-    c->c21 = (int16_t)(((uint16_t)coef[15] << 8) | coef[16]);
-    c->c30 = (int16_t)(((uint16_t)coef[17] << 8) | coef[18]);
+    c->c01 = (int16_t)(((uint16_t)coef[8] << 8) | coef[9]);
+    c->c11 = (int16_t)(((uint16_t)coef[10] << 8) | coef[11]);
+    c->c20 = (int16_t)(((uint16_t)coef[12] << 8) | coef[13]);
+    c->c21 = (int16_t)(((uint16_t)coef[14] << 8) | coef[15]);
+    c->c30 = (int16_t)(((uint16_t)coef[16] << 8) | coef[17]);
     return ESP_OK;
 }
 
@@ -135,11 +158,22 @@ int test_baro(int argc, char **argv)
     }
     printf("  Chip ID = 0x%02x ... OK\n", chip_id);
 
-    /* Configure: pressure 8x OSR, temp 8x OSR, background mode */
-    baro_write(dev, SPL06_REG_PRS_CFG, 0x05);
-    baro_write(dev, SPL06_REG_TMP_CFG, 0x85);
-    baro_write(dev, SPL06_REG_MEAS_CFG, 0x07);
-    vTaskDelay(pdMS_TO_TICKS(SPL06_SETTLE_MS));
+    /* Configure per datasheet: 8x oversampling (no shift), continuous P+T */
+    baro_write(dev, SPL06_REG_PRS_CFG, SPL06_PRS_CFG_8X);
+    baro_write(dev, SPL06_REG_TMP_CFG, SPL06_TMP_CFG_8X);
+    baro_write(dev, SPL06_REG_CFG_REG, SPL06_CFG_REG_NOSHIFT);
+
+    /* Wait for SENSOR_RDY and COEF_RDY before reading coefficients */
+    uint8_t meas = 0;
+    int timeout = 100;
+    do {
+        baro_read(dev, SPL06_REG_MEAS_CFG, &meas, 1);
+        if ((meas & (SPL06_MEAS_SENSOR_RDY | SPL06_MEAS_COEF_RDY)) ==
+            (SPL06_MEAS_SENSOR_RDY | SPL06_MEAS_COEF_RDY)) break;
+        vTaskDelay(pdMS_TO_TICKS(5));
+    } while (--timeout > 0);
+    printf("  MEAS_CFG status=0x%02X (SENSOR_RDY|COEF_RDY %s)\n", meas,
+           ((meas & 0xC0) == 0xC0) ? "OK" : "NOT READY");
 
     /* Read calibration */
     spl06_calib_t calib;
@@ -149,12 +183,33 @@ int test_baro(int argc, char **argv)
         goto cleanup;
     }
     printf("  Calibration loaded\n");
+    printf("  c0=%d c1=%d c00=%ld c10=%ld c01=%d c11=%d c20=%d c21=%d c30=%d\n",
+           calib.c0, calib.c1, (long)calib.c00, (long)calib.c10,
+           calib.c01, calib.c11, calib.c20, calib.c21, calib.c30);
+
+    /* Start continuous background measurement (pressure + temperature) */
+    baro_write(dev, SPL06_REG_MEAS_CFG, SPL06_MEAS_CTRL_BG_PT);
+    vTaskDelay(pdMS_TO_TICKS(SPL06_SETTLE_MS));
 
     printf("  Reading %d sample(s):\n", args.samples);
     int good_samples = 0;
 
     for (int s = 0; s < args.samples; s++) {
         uint8_t buf[3] = { 0 };
+
+        /* Wait for both pressure and temperature data ready */
+        timeout = 100;
+        do {
+            baro_read(dev, SPL06_REG_MEAS_CFG, &meas, 1);
+            if ((meas & (SPL06_MEAS_PRS_RDY | SPL06_MEAS_TMP_RDY)) ==
+                (SPL06_MEAS_PRS_RDY | SPL06_MEAS_TMP_RDY)) break;
+            vTaskDelay(pdMS_TO_TICKS(5));
+        } while (--timeout > 0);
+        if ((meas & (SPL06_MEAS_PRS_RDY | SPL06_MEAS_TMP_RDY)) !=
+            (SPL06_MEAS_PRS_RDY | SPL06_MEAS_TMP_RDY)) {
+            printf("    #%d  [TIMEOUT] data not ready (meas=0x%02X)\n", s + 1, meas);
+            continue;
+        }
 
         /* Read temperature (24-bit signed) */
         err = baro_read(dev, SPL06_REG_TMP_B2, buf, 3);
@@ -168,16 +223,17 @@ int test_baro(int argc, char **argv)
         int32_t raw_p = (int32_t)((buf[0] << 16) | (buf[1] << 8) | buf[2]);
         if (raw_p & 0x800000) raw_p |= 0xFF000000;
 
-        /* Compensate (simplified) */
-        float kT = 36400.0f, kP = 36400.0f;
-        float Traw_sc = (float)raw_t / kT;
-        float Praw_sc = (float)raw_p / kP;
+        /* Compensate (8x oversampling scale factors) */
+        float Traw_sc = (float)raw_t / SPL06_SCALE_8X;
+        float Praw_sc = (float)raw_p / SPL06_SCALE_8X;
         float Tcomp = calib.c0 * 0.5f + calib.c1 * Traw_sc;
-        float Pcomp = calib.c00 + Praw_sc * (calib.c10 + Praw_sc * (calib.c01 + Praw_sc * calib.c11)) +
-                      Traw_sc * calib.c20 + Traw_sc * Praw_sc * (calib.c21 + Praw_sc * calib.c30);
+        float Pcomp = calib.c00
+                      + Praw_sc * (calib.c10 + Praw_sc * (calib.c20 + Praw_sc * calib.c30))
+                      + Traw_sc * calib.c01
+                      + Traw_sc * Praw_sc * (calib.c11 + Praw_sc * calib.c21);
 
-        printf("    #%d  Temp: %.2f C  Pressure: %.1f Pa (%.2f hPa)\n",
-               s + 1, Tcomp, Pcomp, Pcomp / 100.0f);
+        printf("    #%d  raw_t=%ld raw_p=%ld  Temp: %.2f C  Pressure: %.1f Pa (%.2f hPa)\n",
+               s + 1, (long)raw_t, (long)raw_p, Tcomp, Pcomp, Pcomp / 100.0f);
 
         if (Tcomp > -40.0f && Tcomp < 85.0f && Pcomp > 30000.0f && Pcomp < 125000.0f) {
             good_samples++;

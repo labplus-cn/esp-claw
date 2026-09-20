@@ -1205,6 +1205,23 @@ static void lua_ltr308als_create_metatable(lua_State *L)
 #define SPL06_CHIP_ID_ALT      0x11
 #define SPL06_RESET_VAL        0x89
 
+/* Scale factor for 8x oversampling (datasheet Table: scaling factors) */
+#define SPL06_SCALE_8X         7864320.0f
+
+/* MEAS_CFG(0x08) status bits */
+#define SPL06_MEAS_COEF_RDY    0x80  /* bit7: calibration coefficients ready */
+#define SPL06_MEAS_SENSOR_RDY  0x40  /* bit6: sensor initialization complete */
+
+/*
+ * Config values per datasheet: PM_PRC/TMP_PRC = 0011 -> 8x oversampling,
+ * which requires NO P_SHIFT/T_SHIFT. TMP_EXT(bit7)=1 (MEMS on-chip temp sensor).
+ * PM_PRC=0101 would be 32x (needs shift + scale 516096) — intentionally avoided.
+ */
+#define SPL06_PRS_CFG_8X       0x33  /* PM_RATE=011(8/s) | PM_PRC=0011(8x) */
+#define SPL06_TMP_CFG_8X       0xB3  /* TMP_EXT=1 | TMP_RATE=011(8/s) | TMP_PRC=011(8x) */
+#define SPL06_CFG_REG_NOSHIFT  0x00
+#define SPL06_MEAS_CTRL_BG_PT  0x07  /* continuous pressure + temperature */
+
 typedef struct {
     int16_t c0, c1;
     int32_t c00, c10;
@@ -1251,8 +1268,9 @@ static esp_err_t spl06_read(lua_module_spl06_handle_t *hdl, uint8_t reg, uint8_t
 
 static esp_err_t spl06_read_calib(lua_module_spl06_handle_t *hdl)
 {
-    uint8_t coef[19] = { 0 };
-    ESP_RETURN_ON_ERROR(spl06_read(hdl, SPL06_REG_COEF_BASE, coef, 19), TAG_SPL06, "read coef");
+    /* Coefficients occupy registers 0x10..0x21 = 18 bytes */
+    uint8_t coef[18] = { 0 };
+    ESP_RETURN_ON_ERROR(spl06_read(hdl, SPL06_REG_COEF_BASE, coef, 18), TAG_SPL06, "read coef");
     spl06_calib_t *c = &hdl->calib;
     /* c0: 12-bit signed */
     c->c0 = (int16_t)(((uint16_t)coef[0] << 4) | ((coef[1] >> 4) & 0x0F));
@@ -1260,18 +1278,18 @@ static esp_err_t spl06_read_calib(lua_module_spl06_handle_t *hdl)
     /* c1: 12-bit signed */
     c->c1 = (int16_t)(((uint16_t)(coef[1] & 0x0F) << 8) | coef[2]);
     if (c->c1 & 0x800) c->c1 |= 0xF000;
-    /* c00: 18-bit signed */
-    c->c00 = (int32_t)(((int32_t)(coef[3] & 0x7F) << 16) | ((uint32_t)coef[4] << 8) | coef[5]);
+    /* c00: 20-bit signed (coef[3] << 12 | coef[4] << 4 | coef[5] >> 4) */
+    c->c00 = (int32_t)(((uint32_t)coef[3] << 12) | ((uint32_t)coef[4] << 4) | ((coef[5] >> 4) & 0x0F));
     if (c->c00 & 0x80000) c->c00 |= 0xFFF00000;
-    /* c10: 18-bit signed (4 bits + 2 bytes) */
-    c->c10 = (int32_t)(((int32_t)(coef[6] & 0x0F) << 16) | ((uint32_t)coef[7] << 8) | coef[8]);
+    /* c10: 20-bit signed (coef[5] low 4 bits << 16 | coef[6] << 8 | coef[7]) */
+    c->c10 = (int32_t)(((uint32_t)(coef[5] & 0x0F) << 16) | ((uint32_t)coef[6] << 8) | coef[7]);
     if (c->c10 & 0x80000) c->c10 |= 0xFFF00000;
     /* c01..c30: 16-bit signed */
-    c->c01 = (int16_t)(((uint16_t)coef[9] << 8) | coef[10]);
-    c->c11 = (int16_t)(((uint16_t)coef[11] << 8) | coef[12]);
-    c->c20 = (int16_t)(((uint16_t)coef[13] << 8) | coef[14]);
-    c->c21 = (int16_t)(((uint16_t)coef[15] << 8) | coef[16]);
-    c->c30 = (int16_t)(((uint16_t)coef[17] << 8) | coef[18]);
+    c->c01 = (int16_t)(((uint16_t)coef[8] << 8) | coef[9]);
+    c->c11 = (int16_t)(((uint16_t)coef[10] << 8) | coef[11]);
+    c->c20 = (int16_t)(((uint16_t)coef[12] << 8) | coef[13]);
+    c->c21 = (int16_t)(((uint16_t)coef[14] << 8) | coef[15]);
+    c->c30 = (int16_t)(((uint16_t)coef[16] << 8) | coef[17]);
     return ESP_OK;
 }
 
@@ -1309,14 +1327,29 @@ static esp_err_t spl06_probe(lua_module_spl06_handle_t *hdl)
         ESP_LOGE(TAG_SPL06, "SPL06 chip_id=0x%02x (expect 0x%02x or 0x%02x)", chip_id, SPL06_CHIP_ID, SPL06_CHIP_ID_ALT);
         return ESP_ERR_NOT_FOUND;
     }
-    /* Configure: pressure 8x oversample, 32 measurements/sec */
-    ESP_RETURN_ON_ERROR(spl06_write(hdl, SPL06_REG_PRS_CFG, 0x05), TAG_SPL06, "PRS_CFG");
-    /* Temperature 8x oversample, 32 measurements/sec, use internal sensor */
-    ESP_RETURN_ON_ERROR(spl06_write(hdl, SPL06_REG_TMP_CFG, 0x85), TAG_SPL06, "TMP_CFG");
-    /* Background mode (continuous measurement) */
-    ESP_RETURN_ON_ERROR(spl06_write(hdl, SPL06_REG_MEAS_CFG, 0x07), TAG_SPL06, "MEAS_CFG");
+    /* Configure: 8x oversampling for pressure & temperature (no shift needed) */
+    ESP_RETURN_ON_ERROR(spl06_write(hdl, SPL06_REG_PRS_CFG, SPL06_PRS_CFG_8X), TAG_SPL06, "PRS_CFG");
+    /* TMP_EXT(bit7)=1 selects the MEMS on-chip temperature sensor (datasheet) */
+    ESP_RETURN_ON_ERROR(spl06_write(hdl, SPL06_REG_TMP_CFG, SPL06_TMP_CFG_8X), TAG_SPL06, "TMP_CFG");
+    ESP_RETURN_ON_ERROR(spl06_write(hdl, SPL06_REG_CFG_REG, SPL06_CFG_REG_NOSHIFT), TAG_SPL06, "CFG_REG");
+
+    /* Wait for SENSOR_RDY and COEF_RDY before reading calibration coefficients */
+    for (int i = 0; i < 100; i++) {
+        uint8_t meas = 0;
+        if (spl06_read(hdl, SPL06_REG_MEAS_CFG, &meas, 1) == ESP_OK &&
+            (meas & (SPL06_MEAS_SENSOR_RDY | SPL06_MEAS_COEF_RDY)) ==
+                (SPL06_MEAS_SENSOR_RDY | SPL06_MEAS_COEF_RDY)) {
+            break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(5));
+    }
+
     /* Read calibration coefficients */
     ESP_RETURN_ON_ERROR(spl06_read_calib(hdl), TAG_SPL06, "calib");
+
+    /* Start continuous background measurement (pressure + temperature) */
+    ESP_RETURN_ON_ERROR(spl06_write(hdl, SPL06_REG_MEAS_CFG, SPL06_MEAS_CTRL_BG_PT), TAG_SPL06, "MEAS_CFG");
+    vTaskDelay(pdMS_TO_TICKS(200));
     hdl->sensor_initialized = true;
     ESP_LOGI(TAG_SPL06, "SPL06-001 ready, chip_id=0x%02x", chip_id);
     return ESP_OK;
@@ -1340,16 +1373,16 @@ static void spl06_compensate(lua_module_spl06_handle_t *hdl, int32_t raw_t, int3
                               float *out_temp, float *out_pres)
 {
     spl06_calib_t *c = &hdl->calib;
-    /* Oversampling rate factor (8x OSR -> k = 36400.0 for temp, 36400.0 for pres at 8x) */
-    float kT = 36400.0f;
-    float kP = 36400.0f;
-    float Traw_sc = (float)raw_t / kT;
-    float Praw_sc = (float)raw_p / kP;
+    /* 8x oversampling scale factors (datasheet) */
+    float Traw_sc = (float)raw_t / SPL06_SCALE_8X;
+    float Praw_sc = (float)raw_p / SPL06_SCALE_8X;
     /* Compensated temperature */
     float Tcomp = c->c0 * 0.5f + c->c1 * Traw_sc;
     /* Compensated pressure */
-    float Pcomp = c->c00 + Praw_sc * (c->c10 + Praw_sc * (c->c01 + Praw_sc * c->c11)) +
-                  Traw_sc * c->c20 + Traw_sc * Praw_sc * (c->c21 + Praw_sc * c->c30);
+    float Pcomp = c->c00
+                  + Praw_sc * (c->c10 + Praw_sc * (c->c20 + Praw_sc * c->c30))
+                  + Traw_sc * c->c01
+                  + Traw_sc * Praw_sc * (c->c11 + Praw_sc * c->c21);
     *out_temp = Tcomp;
     *out_pres = Pcomp;  /* in Pa */
 }
