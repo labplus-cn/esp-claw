@@ -1,0 +1,5 @@
+dependencies:
+  esp_video:
+    path: ../esp_video
+  espressif/usb_host_uvc: "2.5.2"
+  espressif/tinyusb: ">=0.15.0"

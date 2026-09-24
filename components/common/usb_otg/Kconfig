@@ -1,0 +1,31 @@
+menu "USB OTG Configuration"
+
+    config USB_OTG_MSC
+        bool "Enable USB MSC Device mode (SD card as U-disk)"
+        default n
+        help
+            Enable TinyUSB MSC device mode to expose the SD card
+            as a USB mass storage device when connected to a PC.
+
+    config USB_OTG_HOST_UVC
+        bool "Enable USB Host UVC mode (USB camera)"
+        default n
+        help
+            Enable USB Host mode with UVC camera support.
+            Allows connecting a USB camera to the OTG port.
+
+    config USB_OTG_MSC_TASK_STACK_SIZE
+        int "TinyUSB device task stack size"
+        depends on USB_OTG_MSC
+        default 4096
+        help
+            Stack size for the TinyUSB device task.
+
+    config USB_OTG_HOST_TASK_STACK_SIZE
+        int "USB Host task stack size"
+        depends on USB_OTG_HOST_UVC
+        default 4096
+        help
+            Stack size for the USB Host library task.
+
+endmenu
