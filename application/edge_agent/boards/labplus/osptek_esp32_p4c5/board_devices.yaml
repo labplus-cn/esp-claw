@@ -221,17 +221,17 @@ devices:
   #     - name: adc_battery
 
   # VBUS Charging Detection Device
-  # - name: vbus_detector
-  #   type: custom
-  #   chip: gpio_vbus
-  #   version: default
-  #   config:
-  #     gpio: 14
-  #     active_level: 1                   # High = external power present
-  #     debounce_ms: 20                   # Debounce period
-  #     description: "Type-C VBUS detection for charging status"
-  #   peripherals:
-  #     - name: gpio_vbus
+  - name: vbus_detector
+    type: custom
+    chip: gpio_vbus
+    version: default
+    config:
+      gpio: 14
+      active_level: 1                   # High = external power present
+      debounce_ms: 20                   # Debounce period
+      description: "Type-C VBUS detection for charging status"
+    peripherals:
+      - name: gpio_vbus
 
   # microSD card on SDMMC 4-bit bus. Shares GPIO20~25 stuffing option with SPI NAND.
   - name: fs_sdcard

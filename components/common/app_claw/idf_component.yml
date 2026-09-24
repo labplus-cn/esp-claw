@@ -42,6 +42,11 @@ dependencies:
       - if: $CONFIG{APP_CLAW_CAP_MPY} == True
     path: ../../claw_capabilities/cap_mpy
 
+  cap_rfid:
+    rules:
+      - if: $CONFIG{APP_CLAW_CAP_RFID} == True
+    path: ../../claw_capabilities/cap_rfid
+
   cap_mcp_client:
     rules:
       - if: $CONFIG{APP_CLAW_CAP_MCP_CLIENT} == True
@@ -345,6 +350,18 @@ dependencies:
       - if: $CONFIG{APP_CLAW_CAP_LUA} == True
       - if: $CONFIG{APP_CLAW_LUA_MODULE_STORAGE} == True
     path: ../../lua_modules/lua_module_storage
+
+  lua_module_stm8:
+    rules:
+      - if: $CONFIG{APP_CLAW_CAP_LUA} == True
+      - if: $CONFIG{APP_CLAW_LUA_MODULE_STM8} == True
+    path: ../../lua_modules/lua_module_stm8
+
+  lua_module_usb_otg:
+    rules:
+      - if: $CONFIG{APP_CLAW_CAP_LUA} == True
+      - if: $CONFIG{APP_CLAW_LUA_MODULE_USB_OTG} == True
+    path: ../../lua_modules/lua_module_usb_otg
 
   lua_module_system:
     rules:

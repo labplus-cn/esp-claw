@@ -38,11 +38,15 @@ dependencies:
 
   esp_video:
     path: ../../../components/common/esp_video
-    matches:
-    - if: $CONFIG{ESP_BOARD_DEV_CAMERA_SUPPORT} == True
 
   display_service:
     path: ../../../components/common/display_service
 
   hw_test_cli:
     path: ../../../components/common/hw_test_cli
+
+  usb_otg:
+    path: ../../../components/common/usb_otg
+
+  abobija/rc522:
+    version: "~4.0.1"

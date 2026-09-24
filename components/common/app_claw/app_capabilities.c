@@ -15,6 +15,9 @@
 #if CONFIG_APP_CLAW_CAP_AGENT_MGR
 #include "cap_agent_mgr.h"
 #endif
+#if CONFIG_APP_CLAW_CAP_RFID
+#include "cap_rfid.h"
+#endif
 #if CONFIG_APP_CLAW_CAP_FILES
 #include "cap_files.h"
 #endif
@@ -745,6 +748,16 @@ static esp_err_t app_cap_register_agent_mgr(const app_claw_config_t *config,
 }
 #endif
 
+#if CONFIG_APP_CLAW_CAP_RFID
+static esp_err_t app_cap_register_rfid(const app_claw_config_t *config,
+                                        const app_claw_storage_paths_t *paths)
+{
+    (void)config;
+    (void)paths;
+    return cap_rfid_register_group();
+}
+#endif
+
 static const app_capability_group_entry_t s_capability_group_entries[] = {
 #if CONFIG_APP_CLAW_CAP_AGENT_MGR
     { "cap_agent_mgr", "Agent Manager", "Register agent manager cap", true, NULL, app_cap_register_agent_mgr },
@@ -799,6 +812,9 @@ static const app_capability_group_entry_t s_capability_group_entries[] = {
 #endif
 #if CONFIG_APP_CLAW_CAP_SESSION_MGR
     { "cap_session_mgr", "Session Manager", "Register session manager cap", false, NULL, app_cap_register_session_mgr },
+#endif
+#if CONFIG_APP_CLAW_CAP_RFID
+    { "cap_rfid", "RFID", "Register RFID (RC522) cap", false, NULL, app_cap_register_rfid },
 #endif
 };
 
@@ -856,6 +872,9 @@ static const app_capability_group_info_t s_capability_group_infos[] = {
 #endif
 #if CONFIG_APP_CLAW_CAP_SESSION_MGR
     { "cap_session_mgr", "Session Manager", false },
+#endif
+#if CONFIG_APP_CLAW_CAP_RFID
+    { "cap_rfid", "RFID", false },
 #endif
 };
 

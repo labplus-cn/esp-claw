@@ -201,6 +201,13 @@ menu "App Claw Config"
             help
                 Enable root-only subagent management tools backed by claw_agent_mgr.
 
+        config APP_CLAW_CAP_RFID
+            bool "Enable RFID (RC522) capability"
+            default n
+            help
+                Enable the RFID capability for RC522 card reader access.
+                Provides rfid_scan, rfid_stop, and rfid_info tools.
+
     endmenu
 
     menu "App Claw Lua Modules"
@@ -484,6 +491,20 @@ menu "App Claw Config"
                 The lua_module_vision component is included whenever Lua support
                 and camera support are enabled so its own Kconfig submenu can
                 define vision-specific options such as motion_detect and espdet.
+
+        config APP_CLAW_LUA_MODULE_STM8
+            bool "Enable STM8S001 slave MCU Lua module"
+            default n
+            help
+                Enable the STM8S001 slave MCU Lua module for motor control
+                and battery voltage reading via I2C.
+
+        config APP_CLAW_LUA_MODULE_USB_OTG
+            bool "Enable USB OTG Lua module"
+            default n
+            help
+                Enable the USB OTG Lua module for dynamic role switching
+                between USB Host (UVC camera) and Device (MSC U-disk) modes.
 
     endmenu
 

@@ -116,6 +116,12 @@
 #if CONFIG_APP_CLAW_LUA_MODULE_SCI
 #include "lua_module_sci.h"
 #endif
+#if CONFIG_APP_CLAW_LUA_MODULE_STM8
+#include "lua_module_stm8.h"
+#endif
+#if CONFIG_APP_CLAW_LUA_MODULE_USB_OTG
+#include "lua_module_usb_otg.h"
+#endif
 #if CONFIG_APP_CLAW_LUA_MODULE_STORAGE
 #include "lua_module_storage.h"
 #endif
@@ -583,6 +589,22 @@ static esp_err_t app_lua_register_sci(const char *fatfs_base_path)
 }
 #endif
 
+#if CONFIG_APP_CLAW_LUA_MODULE_STM8
+static esp_err_t app_lua_register_stm8(const char *fatfs_base_path)
+{
+    (void)fatfs_base_path;
+    return lua_module_stm8_register();
+}
+#endif
+
+#if CONFIG_APP_CLAW_LUA_MODULE_USB_OTG
+static esp_err_t app_lua_register_usb_otg(const char *fatfs_base_path)
+{
+    (void)fatfs_base_path;
+    return lua_module_usb_otg_register();
+}
+#endif
+
 #if CONFIG_APP_CLAW_LUA_MODULE_STORAGE
 static esp_err_t app_lua_register_storage(const char *fatfs_base_path)
 {
@@ -709,6 +731,12 @@ static const app_lua_module_entry_t s_lua_module_entries[] = {
 #if CONFIG_APP_CLAW_LUA_MODULE_SCI
     { "sci", "DFRobot SCI", app_lua_register_sci },
 #endif
+#if CONFIG_APP_CLAW_LUA_MODULE_STM8
+    { "stm8", "STM8S001 MCU", app_lua_register_stm8 },
+#endif
+#if CONFIG_APP_CLAW_LUA_MODULE_USB_OTG
+    { "usb_otg", "USB OTG", app_lua_register_usb_otg },
+#endif
 #if CONFIG_APP_CLAW_LUA_MODULE_STORAGE
     { "storage", "Storage", app_lua_register_storage },
 #endif
@@ -821,6 +849,12 @@ static const app_lua_module_info_t s_lua_module_infos[] = {
 #endif
 #if CONFIG_APP_CLAW_LUA_MODULE_SCI
     { "sci", "DFRobot SCI" },
+#endif
+#if CONFIG_APP_CLAW_LUA_MODULE_STM8
+    { "stm8", "STM8S001 MCU" },
+#endif
+#if CONFIG_APP_CLAW_LUA_MODULE_USB_OTG
+    { "usb_otg", "USB OTG" },
 #endif
 #if CONFIG_APP_CLAW_LUA_MODULE_STORAGE
     { "storage", "Storage" },

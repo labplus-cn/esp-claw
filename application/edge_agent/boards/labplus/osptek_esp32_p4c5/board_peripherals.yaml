@@ -97,15 +97,15 @@ peripherals:
 
 
   # VBUS Charging Detection (Type-C Power Input)
-  # - name: gpio_vbus
-  #   type: gpio
-  #   role: io
-  #   config:
-  #     pin: 14                          # GPIO14 - VBUS detection (Type-C power)
-  #     mode: GPIO_MODE_INPUT
-  #     pull_up: false
-  #     pull_down: false
-  #     intr_type: GPIO_INTR_ANYEDGE     # Detect both rising and falling edges
+  - name: gpio_vbus
+    type: gpio
+    role: io
+    config:
+      pin: 14                          # GPIO14 - VBUS detection (Type-C power)
+      mode: GPIO_MODE_INPUT
+      pull_up: false
+      pull_down: false
+      intr_type: GPIO_INTR_ANYEDGE     # Detect both rising and falling edges
 
   # Onboard passive buzzer PWM output (P12 / GPIO21)
   # - name: ledc_buzzer

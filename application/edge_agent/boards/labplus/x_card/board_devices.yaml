@@ -429,13 +429,15 @@ devices:
     peripherals:
       - name: i2c_master
 
-  # External I2C Dual Motor Driver
-  - name: ext_motor
+  # STM8S001 Slave MCU — I2C motor control & battery reading
+  - name: stm8s001
     type: custom
-    chip: ext_motor
+    chip: stm8s001
     version: default
     config:
-      description: "I2C Dual Motor Driver"
+      i2c_addr: 0x11
+      frequency: 100000
+      description: "STM8S001 slave MCU (motor control + battery ADC)"
     peripherals:
       - name: i2c_master
 
