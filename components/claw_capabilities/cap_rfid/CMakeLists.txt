@@ -1,0 +1,11 @@
+idf_component_register(
+    SRCS
+        "src/cap_rfid.c"
+    INCLUDE_DIRS
+        "include"
+    REQUIRES
+        claw_cap
+    PRIV_REQUIRES
+        esp_board_manager
+        rc522
+)
