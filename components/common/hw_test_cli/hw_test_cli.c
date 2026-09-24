@@ -60,6 +60,21 @@ int test_als(int argc, char **argv);
 /* hw_test_baro.c — SPL06-001 barometric pressure sensor test */
 int test_baro(int argc, char **argv);
 
+/* hw_test_pwm.c — LEDC PWM pin connectivity test */
+int test_pwm(int argc, char **argv);
+
+/* hw_test_rfid.c — RC522 RFID reader test */
+int test_rfid(int argc, char **argv);
+
+/* hw_test_usb.c — USB VBUS presence detect (board mgr vbus_detector) */
+int test_usb(int argc, char **argv);
+
+/* hw_test_mcu.c — STM8S001 slave MCU (battery/motor) */
+int test_mcu(int argc, char **argv);
+
+/* hw_test_usb_otg.c — USB OTG role switching (host/device) */
+int test_usb_otg(int argc, char **argv);
+
 /* lua_tool.c — file upload via serial console */
 esp_err_t lua_tool_register(void);
 
@@ -93,6 +108,11 @@ static const hw_test_subcmd_t s_sub_commands[] = {
     { "mag",     "MMC5603 magnetometer test",                   test_mag     },
     { "als",     "LTR-308ALS ambient light sensor test",        test_als     },
     { "baro",    "SPL06-001 barometric pressure sensor test",   test_baro    },
+    { "pwm",     "LEDC PWM pin connectivity test (start/stop)",   test_pwm     },
+    { "rfid",    "RC522 RFID reader I2C test",                    test_rfid    },
+    { "usb",     "USB VBUS presence detect (board mgr vbus_detector)", test_usb     },
+    { "mcu",     "STM8S001 slave MCU (battery/motor)",               test_mcu     },
+    { "usb_otg", "USB OTG role/UVC test (status/host/device/camera/stop)", test_usb_otg },
 };
 
 /* ------------------------------------------------------------------ */
@@ -235,7 +255,7 @@ esp_err_t hw_test_cli_init(void)
 {
     esp_console_cmd_t cmd = {
         .command = "test",
-        .help = "Hardware test: test <i2c|sdcard|screen|camera|audio|touch|lvgl|button|imu> [args...]",
+        .help = "Hardware test: test <i2c|sdcard|screen|camera|audio|touch|lvgl|button|imu|mag|als|baro|pwm|rfid|usb|mcu|usb_otg> [args...]",
         .func = cmd_test,
     };
     esp_err_t err = esp_console_cmd_register(&cmd);
