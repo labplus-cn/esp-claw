@@ -8,6 +8,12 @@ set(_hw_test_srcs
     "hw_test_mag.c"
     "hw_test_als.c"
     "hw_test_baro.c"
+    "hw_test_pwm.c"
+    "hw_test_rfid.c"
+    "hw_test_usb.c"
+    "hw_test_mcu.c"
+    "hw_test_usb_otg.c"
+    "hw_test_usb_camera.c"
     "lua_tool.c"
 )
 
@@ -36,4 +42,8 @@ idf_component_register(
         esp_psram
         mbedtls
         claw_core
+        rc522
+        usb_otg
+        esp_video
+        esp_new_jpeg
 )
