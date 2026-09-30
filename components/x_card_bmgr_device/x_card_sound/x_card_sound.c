@@ -20,7 +20,7 @@ typedef struct {
     const char *peripheral_name;
 } x_card_sound_adc_config_t;
 
-#define X_CARD_SOUND_ADC_PERIPH_NAME  "adc_battery" // Share the unit from battery ADC
+#define X_CARD_SOUND_ADC_DEFAULT_PERIPH_NAME  "adc_battery"
 #define X_CARD_SOUND_ADC_CHANNEL      ADC_CHANNEL_5
 #define X_CARD_SOUND_ADC_SAMPLES      4U
 
@@ -38,12 +38,24 @@ int x_card_sound_adc_init(void *cfg, int cfg_size, void **device_handle)
         return -1;
     }
 
+    const char *peripheral_name = X_CARD_SOUND_ADC_DEFAULT_PERIPH_NAME;
+    uint8_t sample_count = X_CARD_SOUND_ADC_SAMPLES;
+    if (cfg && cfg_size >= (int)sizeof(x_card_sound_adc_config_t)) {
+        const x_card_sound_adc_config_t *sound_cfg = cfg;
+        if (sound_cfg->samples > 0) {
+            sample_count = (uint8_t)sound_cfg->samples;
+        }
+        if (sound_cfg->peripheral_count == 1 && sound_cfg->peripheral_name) {
+            peripheral_name = sound_cfg->peripheral_name;
+        }
+    }
+
     periph_adc_handle_t *adc_periph = NULL;
-    esp_err_t ret = esp_board_manager_get_periph_handle(X_CARD_SOUND_ADC_PERIPH_NAME,
+    esp_err_t ret = esp_board_manager_get_periph_handle(peripheral_name,
                                                         (void **)&adc_periph);
     if (ret != ESP_OK || !adc_periph || !adc_periph->oneshot) {
         ESP_LOGE(TAG, "get %s peripheral failed: %s",
-                 X_CARD_SOUND_ADC_PERIPH_NAME, esp_err_to_name(ret));
+                 peripheral_name, esp_err_to_name(ret));
         return -1;
     }
 
@@ -54,14 +66,7 @@ int x_card_sound_adc_init(void *cfg, int cfg_size, void **device_handle)
 
     handle->adc_periph = adc_periph;
     handle->channel = X_CARD_SOUND_ADC_CHANNEL;
-    handle->sample_count = X_CARD_SOUND_ADC_SAMPLES;
-
-    if (cfg && cfg_size >= (int)sizeof(x_card_sound_adc_config_t)) {
-        const x_card_sound_adc_config_t *sound_cfg = cfg;
-        if (sound_cfg->samples > 0) {
-            handle->sample_count = (uint8_t)sound_cfg->samples;
-        }
-    }
+    handle->sample_count = sample_count;
 
     // Configure channel 5 on the shared oneshot unit
     adc_oneshot_chan_cfg_t chan_cfg = {
@@ -90,7 +95,7 @@ int x_card_sound_adc_init(void *cfg, int cfg_size, void **device_handle)
 
     *device_handle = handle;
     ESP_LOGI(TAG, "sound_adc ready on %s channel %d, samples=%u, calibrated=%s",
-             X_CARD_SOUND_ADC_PERIPH_NAME, handle->channel,
+             peripheral_name, handle->channel,
              handle->sample_count, handle->cali_enabled ? "yes" : "no");
     return 0;
 }

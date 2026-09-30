@@ -81,7 +81,7 @@ static esp_err_t reg_read8(i2c_master_dev_handle_t dev, uint8_t reg,
  *  QMI8658 — 6-axis IMU  (7-bit addr 0x6B)
  * =================================================================== */
 
-struct qmi8658_handle {
+struct x_card_qmi8658_handle {
     i2c_master_dev_handle_t i2c_dev;
 };
 
@@ -101,7 +101,7 @@ struct qmi8658_handle {
 #define QMI8658_ACC_SENS_16G    (16.0f / 32768.0f)
 #define QMI8658_GYR_SENS_2048   (2048.0f / 32768.0f)
 
-int qmi8658_init(void *cfg, int cfg_size, void **device_handle)
+int x_card_qmi8658_init(void *cfg, int cfg_size, void **device_handle)
 {
     ESP_LOGI(TAG, "QMI8658: init (7-bit addr 0x%02X)", QMI8658_I2C_ADDR_7BIT);
 
@@ -125,7 +125,7 @@ int qmi8658_init(void *cfg, int cfg_size, void **device_handle)
     reg_write8(dev, 0x07, QMI8658_CTRL7_ACC_EN | QMI8658_CTRL7_GYR_EN);
     reg_write8(dev, 0x08, QMI8658_CTRL7_ACC_EN | QMI8658_CTRL7_GYR_EN);
 
-    qmi8658_handle_t *hdl = calloc(1, sizeof(*hdl));
+    x_card_qmi8658_handle_t *hdl = calloc(1, sizeof(*hdl));
     if (!hdl) return -1;
     hdl->i2c_dev = dev;
     *device_handle = hdl;
@@ -134,17 +134,18 @@ int qmi8658_init(void *cfg, int cfg_size, void **device_handle)
     return 0;
 }
 
-int qmi8658_deinit(void *device_handle)
+int x_card_qmi8658_deinit(void *device_handle)
 {
     if (!device_handle) return 0;
-    qmi8658_handle_t *hdl = (qmi8658_handle_t *)device_handle;
+    x_card_qmi8658_handle_t *hdl = (x_card_qmi8658_handle_t *)device_handle;
     i2c_master_bus_rm_device(hdl->i2c_dev);
     free(hdl);
     ESP_LOGI(TAG, "QMI8658: deinit");
     return 0;
 }
 
-esp_err_t qmi8658_read_accel(qmi8658_handle_t *hdl, float *x, float *y, float *z)
+esp_err_t x_card_qmi8658_read_accel(x_card_qmi8658_handle_t *hdl,
+                                    float *x, float *y, float *z)
 {
     if (!hdl || !x || !y || !z) return ESP_ERR_INVALID_ARG;
 
@@ -161,7 +162,8 @@ esp_err_t qmi8658_read_accel(qmi8658_handle_t *hdl, float *x, float *y, float *z
     return ESP_OK;
 }
 
-esp_err_t qmi8658_read_gyro(qmi8658_handle_t *hdl, float *x, float *y, float *z)
+esp_err_t x_card_qmi8658_read_gyro(x_card_qmi8658_handle_t *hdl,
+                                   float *x, float *y, float *z)
 {
     if (!hdl || !x || !y || !z) return ESP_ERR_INVALID_ARG;
 
@@ -178,7 +180,7 @@ esp_err_t qmi8658_read_gyro(qmi8658_handle_t *hdl, float *x, float *y, float *z)
     return ESP_OK;
 }
 
-ESP_BOARD_ENTRY_IMPLEMENT(qmi8658, qmi8658_init, qmi8658_deinit);
+ESP_BOARD_ENTRY_IMPLEMENT(qmi8658, x_card_qmi8658_init, x_card_qmi8658_deinit);
 
 /* ===================================================================
  *  LTR-308ALS-01 — Ambient Light Sensor

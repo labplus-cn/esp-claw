@@ -449,3 +449,5 @@ devices:
     config:
       samples: 4
       description: "Sound envelope monitoring via ADC"
+    peripherals:
+      - name: adc_battery

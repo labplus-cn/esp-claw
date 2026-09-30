@@ -32,13 +32,15 @@ extern "C" {
 #define QMI8658_WHO_AM_I_VAL     0x05
 
 /** QMI8658 device handle (opaque — pass to read functions) */
-typedef struct qmi8658_handle qmi8658_handle_t;
+typedef struct x_card_qmi8658_handle x_card_qmi8658_handle_t;
 
-esp_err_t qmi8658_read_accel(qmi8658_handle_t *handle, float *x, float *y, float *z);
-esp_err_t qmi8658_read_gyro(qmi8658_handle_t *handle, float *x, float *y, float *z);
+esp_err_t x_card_qmi8658_read_accel(x_card_qmi8658_handle_t *handle,
+                                    float *x, float *y, float *z);
+esp_err_t x_card_qmi8658_read_gyro(x_card_qmi8658_handle_t *handle,
+                                   float *x, float *y, float *z);
 
-int qmi8658_init(void *cfg, int cfg_size, void **device_handle);
-int qmi8658_deinit(void *device_handle);
+int x_card_qmi8658_init(void *cfg, int cfg_size, void **device_handle);
+int x_card_qmi8658_deinit(void *device_handle);
 
 /* ===================================================================
  *  LTR-308ALS-01 — Ambient Light Sensor
