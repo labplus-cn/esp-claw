@@ -5,7 +5,10 @@ When a request mentions `ws2812`, use this `led_strip` module by default.
 
 ## How to call
 - Import it with `local led_strip = require("led_strip")`
+- Prefer `local strip = led_strip.open("board_led_strip")` when the strip is
+  declared in `board_devices.yaml`; this reuses the Board Manager handle.
 - Call `local strip = led_strip.new(gpio, max_leds)` to create a strip handle
+  only for hardware that is not already declared in Board Manager.
 - Call `strip:set_pixel(index, r, g, b)` to set one pixel
 - Call `strip:set_pixel_hsv(index, h, s, v)` to set one pixel using HSV
 - Call `strip:refresh()` to apply changes
@@ -22,9 +25,12 @@ Pixel indexes are 0-based. `set_pixel`, `set_pixel_hsv`, `refresh`, `clear`, and
 ```lua
 local led_strip = require("led_strip")
 
-local strip = led_strip.new(8, 1)
+local strip = led_strip.open("board_led_strip")
 strip:set_pixel(0, 255, 0, 0)
 strip:set_pixel_hsv(0, 120, 255, 64)
 strip:refresh()
 strip:close()
 ```
+
+`open()` returns a borrowed handle. `close()` releases only the Lua wrapper;
+Board Manager remains the owner of the physical strip.

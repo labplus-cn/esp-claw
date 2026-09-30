@@ -1,4 +1,4 @@
 ## IDF Component Manager Manifest File
 dependencies:
-  espressif__esp_board_manager: "*"
-  espressif__i2c_bus: "*"
+  espressif/esp_board_manager: "*"
+  espressif/i2c_bus: ^1.5.1

@@ -5,4 +5,5 @@ idf_component_register(
         "src"
     REQUIRES
         cap_lua
+        espressif__esp_board_manager
 )

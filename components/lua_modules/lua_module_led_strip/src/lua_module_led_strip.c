@@ -6,6 +6,8 @@
 #include "lua_module_led_strip.h"
 
 #include "cap_lua.h"
+#include "dev_led_strip.h"
+#include "esp_board_manager.h"
 #include "esp_err.h"
 #include "lauxlib.h"
 #include "led_strip.h"
@@ -17,6 +19,7 @@
 
 typedef struct {
     led_strip_handle_t strip;
+    bool owned;
 } lua_module_led_strip_ud_t;
 
 static void lua_module_led_strip_hsv_to_rgb(uint32_t hue, uint32_t saturation, uint32_t value,
@@ -105,8 +108,10 @@ static int lua_module_led_strip_gc(lua_State *L)
 {
     lua_module_led_strip_ud_t *ud =
         (lua_module_led_strip_ud_t *)luaL_testudata(L, 1, LUA_MODULE_LED_STRIP_METATABLE);
-    if (ud && ud->strip) {
+    if (ud && ud->strip && ud->owned) {
         led_strip_del(ud->strip);
+    }
+    if (ud) {
         ud->strip = NULL;
     }
     return 0;
@@ -174,11 +179,24 @@ static int lua_module_led_strip_close(lua_State *L)
 {
     lua_module_led_strip_ud_t *ud =
         (lua_module_led_strip_ud_t *)luaL_checkudata(L, 1, LUA_MODULE_LED_STRIP_METATABLE);
-    if (ud->strip) {
+    if (ud->strip && ud->owned) {
         led_strip_del(ud->strip);
-        ud->strip = NULL;
     }
+    ud->strip = NULL;
     return 0;
+}
+
+static lua_module_led_strip_ud_t *lua_module_led_strip_push(lua_State *L,
+                                                            led_strip_handle_t strip,
+                                                            bool owned)
+{
+    lua_module_led_strip_ud_t *ud =
+        (lua_module_led_strip_ud_t *)lua_newuserdata(L, sizeof(*ud));
+    ud->strip = strip;
+    ud->owned = owned;
+    luaL_getmetatable(L, LUA_MODULE_LED_STRIP_METATABLE);
+    lua_setmetatable(L, -2);
+    return ud;
 }
 
 static int lua_module_led_strip_new(lua_State *L)
@@ -215,11 +233,22 @@ static int lua_module_led_strip_new(lua_State *L)
         return luaL_error(L, "led_strip new failed: %s", esp_err_to_name(err));
     }
 
-    lua_module_led_strip_ud_t *ud =
-        (lua_module_led_strip_ud_t *)lua_newuserdata(L, sizeof(*ud));
-    ud->strip = strip;
-    luaL_getmetatable(L, LUA_MODULE_LED_STRIP_METATABLE);
-    lua_setmetatable(L, -2);
+    lua_module_led_strip_push(L, strip, true);
+    return 1;
+}
+
+/* Open an LED strip already initialized and owned by Board Manager. */
+static int lua_module_led_strip_open(lua_State *L)
+{
+    const char *device_name = luaL_checkstring(L, 1);
+    dev_led_strip_handles_t *handles = NULL;
+    esp_err_t err = esp_board_manager_get_device_handle(device_name, (void **)&handles);
+    if (err != ESP_OK || handles == NULL || handles->strip_handle == NULL) {
+        return luaL_error(L, "led_strip open '%s' failed: %s",
+                          device_name, esp_err_to_name(err != ESP_OK ? err : ESP_ERR_NOT_FOUND));
+    }
+
+    lua_module_led_strip_push(L, handles->strip_handle, false);
     return 1;
 }
 
@@ -246,6 +275,8 @@ int luaopen_led_strip(lua_State *L)
     lua_newtable(L);
     lua_pushcfunction(L, lua_module_led_strip_new);
     lua_setfield(L, -2, "new");
+    lua_pushcfunction(L, lua_module_led_strip_open);
+    lua_setfield(L, -2, "open");
     return 1;
 }
 

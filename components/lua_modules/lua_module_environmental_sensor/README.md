@@ -1,6 +1,6 @@
 # Lua Environmental Sensor
 
-This module describes how to read environmental data from Lua. It supports Bosch BME690 and DHT-family sensors when the corresponding backend is enabled in the firmware build.
+This module describes how to read environmental data from Lua. It supports Bosch BME690 and DHT-family sensors when the corresponding backend is enabled in the firmware build. It also bundles the reusable pure-Lua `sht20` driver for SHT20 temperature/humidity sensors at I2C address `0x40`.
 
 ## How to call
 - Import it with `local environmental_sensor = require("environmental_sensor")`
@@ -88,3 +88,15 @@ sensor:close()
 - Reads are blocking.
 - The BME690 board device must resolve to a valid I2C peripheral, or you must pass `peripheral` explicitly in Lua.
 - Any setup or read failure raises a Lua error.
+
+## SHT20 library
+
+```lua
+local sht20 = require("sht20")
+local sensor = sht20.new({ port = 0, sda = 44, scl = 43 })
+local sample = sensor:read()
+print(sample.temperature, sample.humidity)
+sensor:close()
+```
+
+See `lib/sht20.md` for options, cleanup, blocking behavior, and CRC checking.

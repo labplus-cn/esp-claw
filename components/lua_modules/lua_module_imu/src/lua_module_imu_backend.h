@@ -63,6 +63,12 @@ typedef struct {
     /** Read one accel+gyro sample. */
     esp_err_t (*read_sample)(lua_imu_backend_ctx_t *ctx, lua_imu_sample_t *out);
 
+    /**
+     * Switch to acceleration-only sampling. Optional; callers requesting this
+     * mode receive ESP_ERR_NOT_SUPPORTED when the backend does not implement it.
+     */
+    esp_err_t (*set_accel_only)(lua_imu_backend_ctx_t *ctx, bool enabled);
+
     /** Read raw temperature (chip-defined units). */
     esp_err_t (*read_temperature)(lua_imu_backend_ctx_t *ctx, int32_t *out);
 

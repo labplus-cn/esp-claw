@@ -15,6 +15,8 @@
 #include "iot_button.h"
 #include "button_gpio.h"
 #include "cap_lua.h"
+#include "dev_button.h"
+#include "esp_board_manager.h"
 
 static const char *TAG = "lua_button";
 
@@ -37,6 +39,7 @@ typedef struct {
 
 typedef struct {
     button_handle_t handle;
+    bool            owned;
 } btn_lua_handle_ud_t;
 
 static btn_lua_reg_t s_regs[BTN_MAX_HANDLES];
@@ -162,7 +165,9 @@ static int lua_btn_handle_gc(lua_State *L)
     if (reg) {
         btn_remove_reg(L, reg);
     }
-    iot_button_delete(ud->handle);
+    if (ud->owned) {
+        iot_button_delete(ud->handle);
+    }
     ud->handle = NULL;
     return 0;
 }
@@ -231,6 +236,49 @@ static int lua_btn_new(lua_State *L)
     btn_lua_handle_ud_t *ud =
         (btn_lua_handle_ud_t *)lua_newuserdata(L, sizeof(*ud));
     ud->handle = btn;
+    ud->owned = true;
+    luaL_getmetatable(L, BTN_HANDLE_METATABLE);
+    lua_setmetatable(L, -2);
+    return 1;
+}
+
+static int lua_btn_open(lua_State *L)
+{
+    const char *device_name = luaL_checkstring(L, 1);
+    int button_index = (int)luaL_optinteger(L, 2, 1);
+    dev_button_handles_t *handles = NULL;
+
+    esp_err_t err = esp_board_manager_get_device_handle(device_name, (void **)&handles);
+    if (err != ESP_OK || handles == NULL) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "button.open failed for '%s': %s", device_name,
+                        esp_err_to_name(err != ESP_OK ? err : ESP_ERR_NOT_FOUND));
+        return 2;
+    }
+    if (button_index < 1 || button_index > handles->num_buttons ||
+        handles->button_handles[button_index - 1] == NULL) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "button.open index %d out of range for '%s'",
+                        button_index, device_name);
+        return 2;
+    }
+
+    button_handle_t btn = handles->button_handles[button_index - 1];
+    if (btn_find_reg(btn) != NULL) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "button '%s' is already open in Lua", device_name);
+        return 2;
+    }
+    if (!btn_add_reg(btn)) {
+        lua_pushnil(L);
+        lua_pushfstring(L, "too many button handles (max %d)", BTN_MAX_HANDLES);
+        return 2;
+    }
+
+    btn_lua_handle_ud_t *ud =
+        (btn_lua_handle_ud_t *)lua_newuserdata(L, sizeof(*ud));
+    ud->handle = btn;
+    ud->owned = false;
     luaL_getmetatable(L, BTN_HANDLE_METATABLE);
     lua_setmetatable(L, -2);
     return 1;
@@ -251,11 +299,13 @@ static int lua_btn_close(lua_State *L)
 
     btn_remove_reg(L, reg);
 
-    err = iot_button_delete(handle);
-    if (err != ESP_OK) {
-        lua_pushnil(L);
-        lua_pushfstring(L, "button.close failed: %s", esp_err_to_name(err));
-        return 2;
+    if (ud->owned) {
+        err = iot_button_delete(handle);
+        if (err != ESP_OK) {
+            lua_pushnil(L);
+            lua_pushfstring(L, "button.close failed: %s", esp_err_to_name(err));
+            return 2;
+        }
     }
 
     ud->handle = NULL;
@@ -438,6 +488,7 @@ int luaopen_button(lua_State *L)
 {
     static const luaL_Reg funcs[] = {
         {"new",           lua_btn_new},
+        {"open",          lua_btn_open},
         {"close",         lua_btn_close},
         {"get_key_level", lua_btn_get_key_level},
         {"on",            lua_btn_on},

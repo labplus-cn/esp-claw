@@ -29,12 +29,6 @@ static const char *TAG = "lua_module_imu.qmi8658";
 #define QMI8658_I2C_ADDR_SDO_LOW   0x6A
 #define QMI8658_I2C_ADDR_SDO_HIGH  0x6B
 
-/* The QMI8658 CTRL7 register address varies between silicon revisions:
- * some use 0x07, others 0x08.  The Waveshare component hard-codes 0x08.
- * We write to both addresses to cover all variants. */
-#define QMI8658_CTRL7_ADDR_A  0x07
-#define QMI8658_CTRL7_ADDR_B  0x08
-
 /* Scale factors for float→int conversion. */
 #define ACCEL_SCALE_FACTOR  1000  /* m/s² → mm/s² */
 #define GYRO_SCALE_FACTOR   1000  /* rad/s → mrad/s */
@@ -43,6 +37,7 @@ static const char *TAG = "lua_module_imu.qmi8658";
 typedef struct {
     qmi8658_dev_t dev;
     bool initialized;
+    bool accel_only;
 } qmi8658_state_t;
 
 static esp_err_t qmi8658_backend_probe(lua_imu_backend_ctx_t *ctx, uint8_t i2c_addr)
@@ -79,11 +74,9 @@ static esp_err_t qmi8658_backend_probe(lua_imu_backend_ctx_t *ctx, uint8_t i2c_a
     qmi8658_set_gyro_unit_rads(&st->dev, true);
     qmi8658_set_display_precision(&st->dev, 4);
 
-    /* Explicitly re-enable sensors by writing to BOTH possible CTRL7
-     * addresses (0x07 and 0x08) to cover all silicon revisions. */
-    uint8_t enable_val = QMI8658_ENABLE_ACCEL | QMI8658_ENABLE_GYRO;
-    qmi8658_write_register(&st->dev, QMI8658_CTRL7_ADDR_A, enable_val);
-    qmi8658_write_register(&st->dev, QMI8658_CTRL7_ADDR_B, enable_val);
+    ESP_RETURN_ON_ERROR(
+        qmi8658_enable_sensors(&st->dev, QMI8658_ENABLE_ACCEL | QMI8658_ENABLE_GYRO),
+        TAG, "Failed to enable QMI8658 sensors");
 
     /* Sensor needs ~100 ms after enable before producing valid data */
     vTaskDelay(pdMS_TO_TICKS(100));
@@ -118,21 +111,48 @@ static esp_err_t qmi8658_backend_read_sample(lua_imu_backend_ctx_t *ctx, lua_imu
         return ESP_ERR_NOT_FINISHED;
     }
 
-    qmi8658_data_t data = { 0 };
-    ret = qmi8658_read_sensor_data(&st->dev, &data);
-    if (ret != ESP_OK) {
-        return ESP_FAIL;
-    }
+    if (st->accel_only) {
+        float x = 0;
+        float y = 0;
+        float z = 0;
+        ret = qmi8658_read_accel(&st->dev, &x, &y, &z);
+        if (ret != ESP_OK) {
+            return ESP_FAIL;
+        }
+        out->accel.x = (int)(x * ACCEL_SCALE_FACTOR);
+        out->accel.y = (int)(y * ACCEL_SCALE_FACTOR);
+        out->accel.z = (int)(z * ACCEL_SCALE_FACTOR);
+        out->sens_time = esp_timer_get_time();
+    } else {
+        qmi8658_data_t data = { 0 };
+        ret = qmi8658_read_sensor_data(&st->dev, &data);
+        if (ret != ESP_OK) {
+            return ESP_FAIL;
+        }
 
-    /* Convert float SI values to scaled integers for the Lua layer. */
-    out->accel.x = (int)(data.accelX * ACCEL_SCALE_FACTOR);
-    out->accel.y = (int)(data.accelY * ACCEL_SCALE_FACTOR);
-    out->accel.z = (int)(data.accelZ * ACCEL_SCALE_FACTOR);
-    out->gyro.x = (int)(data.gyroX * GYRO_SCALE_FACTOR);
-    out->gyro.y = (int)(data.gyroY * GYRO_SCALE_FACTOR);
-    out->gyro.z = (int)(data.gyroZ * GYRO_SCALE_FACTOR);
-    out->sens_time = (int64_t)data.timestamp;
+        /* Convert float SI values to scaled integers for the Lua layer. */
+        out->accel.x = (int)(data.accelX * ACCEL_SCALE_FACTOR);
+        out->accel.y = (int)(data.accelY * ACCEL_SCALE_FACTOR);
+        out->accel.z = (int)(data.accelZ * ACCEL_SCALE_FACTOR);
+        out->gyro.x = (int)(data.gyroX * GYRO_SCALE_FACTOR);
+        out->gyro.y = (int)(data.gyroY * GYRO_SCALE_FACTOR);
+        out->gyro.z = (int)(data.gyroZ * GYRO_SCALE_FACTOR);
+        out->sens_time = (int64_t)data.timestamp;
+    }
     out->status = 0;
+    return ESP_OK;
+}
+
+static esp_err_t qmi8658_backend_set_accel_only(lua_imu_backend_ctx_t *ctx, bool enabled)
+{
+    qmi8658_state_t *st = (qmi8658_state_t *)ctx->state;
+    uint8_t enable_val = QMI8658_ENABLE_ACCEL;
+    if (!enabled) {
+        enable_val |= QMI8658_ENABLE_GYRO;
+    }
+    ESP_RETURN_ON_ERROR(qmi8658_enable_sensors(&st->dev, enable_val),
+                        TAG, "Failed to configure QMI8658 sensor mode");
+    st->accel_only = enabled;
     return ESP_OK;
 }
 
@@ -187,6 +207,7 @@ const lua_imu_backend_t lua_imu_backend = {
     .probe = qmi8658_backend_probe,
     .destroy = qmi8658_backend_destroy,
     .read_sample = qmi8658_backend_read_sample,
+    .set_accel_only = qmi8658_backend_set_accel_only,
     .read_temperature = qmi8658_backend_read_temperature,
     .read_int_status = qmi8658_backend_read_int_status,
     .is_supported_addr = qmi8658_backend_is_supported_addr,

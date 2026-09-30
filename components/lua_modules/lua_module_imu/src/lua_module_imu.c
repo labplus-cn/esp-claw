@@ -84,6 +84,7 @@ typedef struct {
     bool has_frequency;
     bool has_int_gpio;
     bool has_sdo_gpio;
+    bool accel_only;
 } lua_imu_resolved_cfg_t;
 
 static const char *TAG = "lua_module_imu";
@@ -242,6 +243,17 @@ static esp_err_t lua_imu_create_handle(const lua_imu_resolved_cfg_t *cfg,
     }
 
     handle->sensor_initialized = true;
+    if (cfg->accel_only) {
+        if (lua_imu_backend.set_accel_only == NULL) {
+            lua_imu_destroy_handle(handle);
+            return ESP_ERR_NOT_SUPPORTED;
+        }
+        err = lua_imu_backend.set_accel_only(&handle->ctx, true);
+        if (err != ESP_OK) {
+            lua_imu_destroy_handle(handle);
+            return err;
+        }
+    }
     *out_handle = handle;
     if (cfg->int_gpio_num >= 0) {
         ESP_LOGI(TAG, "%s IMU initialized on %s, INT GPIO%d, addr 0x%02x, freq %d Hz",
@@ -520,6 +532,12 @@ static void lua_imu_apply_lua_overrides(lua_State *L, int opts_idx,
     if (lua_isnumber(L, -1)) {
         cfg->sdo_gpio_num = (int)lua_tointeger(L, -1);
         cfg->has_sdo_gpio = true;
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, opts_idx, "accel_only");
+    if (lua_isboolean(L, -1)) {
+        cfg->accel_only = lua_toboolean(L, -1);
     }
     lua_pop(L, 1);
 }
