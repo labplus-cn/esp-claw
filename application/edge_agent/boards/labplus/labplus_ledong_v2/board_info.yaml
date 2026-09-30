@@ -1,0 +1,5 @@
+board: labplus_ledong_v2
+chip: esp32s3
+version: 1.0.0
+description: "labplus_ledong_v2 board"
+manufacturer: "labplus"
