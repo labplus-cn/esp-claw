@@ -501,10 +501,12 @@ menu "App Claw Config"
 
         config APP_CLAW_LUA_MODULE_USB_OTG
             bool "Enable USB OTG Lua module"
+            depends on IDF_TARGET_ESP32P4
             default n
             help
                 Enable the USB OTG Lua module for dynamic role switching
                 between USB Host (UVC camera) and Device (MSC U-disk) modes.
+                The current implementation supports ESP32-P4 only.
 
     endmenu
 

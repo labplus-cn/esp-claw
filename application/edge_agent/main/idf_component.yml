@@ -37,6 +37,9 @@ dependencies:
     path: ../../../components/common/wifi_manager
 
   esp_video:
+    rules:
+      - if: target in [esp32p4]
+      - if: $CONFIG{ESP_BOARD_DEV_CAMERA_SUPPORT} == True
     path: ../../../components/common/esp_video
 
   display_service:
@@ -46,6 +49,8 @@ dependencies:
     path: ../../../components/common/hw_test_cli
 
   usb_otg:
+    rules:
+      - if: target in [esp32p4]
     path: ../../../components/common/usb_otg
 
   abobija/rc522:

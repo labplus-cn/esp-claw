@@ -2,17 +2,21 @@ menu "USB OTG Configuration"
 
     config USB_OTG_MSC
         bool "Enable USB MSC Device mode (SD card as U-disk)"
+        depends on IDF_TARGET_ESP32P4
         default n
         help
             Enable TinyUSB MSC device mode to expose the SD card
             as a USB mass storage device when connected to a PC.
+            The current implementation uses the ESP32-P4 high-speed UTMI PHY.
 
     config USB_OTG_HOST_UVC
         bool "Enable USB Host UVC mode (USB camera)"
+        depends on IDF_TARGET_ESP32P4
         default n
         help
             Enable USB Host mode with UVC camera support.
             Allows connecting a USB camera to the OTG port.
+            The current role-switching implementation supports ESP32-P4 only.
 
     config USB_OTG_MSC_TASK_STACK_SIZE
         int "TinyUSB device task stack size"

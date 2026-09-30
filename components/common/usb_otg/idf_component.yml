@@ -1,5 +1,13 @@
 dependencies:
   esp_video:
+    rules:
+      - if: $CONFIG{USB_OTG_HOST_UVC} == True
     path: ../esp_video
-  espressif/usb_host_uvc: "2.5.2"
-  espressif/tinyusb: ">=0.15.0"
+  espressif/usb_host_uvc:
+    version: "2.5.2"
+    rules:
+      - if: $CONFIG{USB_OTG_HOST_UVC} == True
+  espressif/tinyusb:
+    version: ">=0.15.0"
+    rules:
+      - if: $CONFIG{USB_OTG_MSC} == True

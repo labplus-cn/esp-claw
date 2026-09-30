@@ -6,6 +6,15 @@ include("${CMAKE_SOURCE_DIR}/tools/cmake/flash_partition_defaults.cmake")
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(edge_agent VERSION 0.1.0)
 
+# LVGL discovers all sources recursively, including its unused MicroPython
+# allocator backend. Keep MicroPython sources out of the firmware build when
+# the edge_agent MicroPython capability is disabled.
+if(NOT CONFIG_APP_CLAW_CAP_MPY AND TARGET __idf_lvgl__lvgl)
+    get_target_property(EDGE_AGENT_LVGL_SOURCES __idf_lvgl__lvgl SOURCES)
+    list(FILTER EDGE_AGENT_LVGL_SOURCES EXCLUDE REGEX "/src/stdlib/micropython/")
+    set_property(TARGET __idf_lvgl__lvgl PROPERTY SOURCES "${EDGE_AGENT_LVGL_SOURCES}")
+endif()
+
 set(EDGE_AGENT_FATFS_IMAGE_ROOT "${CMAKE_SOURCE_DIR}/fatfs_image")
 set(EDGE_AGENT_FATFS_SOURCE_ROOT "${EDGE_AGENT_FATFS_IMAGE_ROOT}/storage")
 set(EDGE_AGENT_FATFS_BUILD_ROOT "${CMAKE_BINARY_DIR}/fatfs_image")

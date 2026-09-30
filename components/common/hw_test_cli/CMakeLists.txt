@@ -12,14 +12,45 @@ set(_hw_test_srcs
     "hw_test_rfid.c"
     "hw_test_usb.c"
     "hw_test_mcu.c"
-    "hw_test_usb_otg.c"
-    "hw_test_usb_camera.c"
     "lua_tool.c"
 )
 
+set(_hw_test_priv_requires
+    console
+    esp_board_manager
+    display_service
+    driver
+    esp_lcd
+    esp_lcd_touch
+    vfs
+    fatfs
+    esp_psram
+    mbedtls
+    claw_core
+    rc522
+)
+
+if(CONFIG_IDF_TARGET_ESP32P4)
+    list(APPEND _hw_test_srcs
+        "hw_test_usb_otg.c"
+        "hw_test_usb_camera.c"
+    )
+    list(APPEND _hw_test_priv_requires
+        usb_otg
+        esp_video
+        esp_new_jpeg
+    )
+endif()
+
 if(CONFIG_ESP_BOARD_DEV_CAMERA_SUPPORT)
     list(APPEND _hw_test_srcs "hw_test_camera.c")
+    list(APPEND _hw_test_priv_requires
+        esp_video
+        esp_new_jpeg
+    )
 endif()
+
+list(REMOVE_DUPLICATES _hw_test_priv_requires)
 
 if(CONFIG_ESP_BOARD_DEV_LCD_TOUCH_SUPPORT)
     list(APPEND _hw_test_srcs "hw_test_touch.c")
@@ -31,19 +62,5 @@ idf_component_register(
     INCLUDE_DIRS
         "."
     PRIV_REQUIRES
-        console
-        esp_board_manager
-        display_service
-        driver
-        esp_lcd
-        esp_lcd_touch
-        vfs
-        fatfs
-        esp_psram
-        mbedtls
-        claw_core
-        rc522
-        usb_otg
-        esp_video
-        esp_new_jpeg
+        ${_hw_test_priv_requires}
 )

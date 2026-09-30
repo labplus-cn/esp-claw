@@ -79,7 +79,7 @@ CONFIG_BT_CTRL_BLE_ADV_REPORT_FLOW_CTRL_SUPP=n
 CONFIG_BT_CTRL_BLE_SCAN_DUPL=n
 
 # MicroPython capability
-CONFIG_APP_CLAW_CAP_MPY=y
+CONFIG_APP_CLAW_CAP_MPY=n
 
 # See https://github.com/espressif/esp-claw/issues/101
 CONFIG_HTTP_REUSE_ENABLE=n

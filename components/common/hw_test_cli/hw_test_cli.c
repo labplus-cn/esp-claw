@@ -73,7 +73,9 @@ int test_usb(int argc, char **argv);
 int test_mcu(int argc, char **argv);
 
 /* hw_test_usb_otg.c — USB OTG role switching (host/device) */
+#if CONFIG_IDF_TARGET_ESP32P4
 int test_usb_otg(int argc, char **argv);
+#endif
 
 /* lua_tool.c — file upload via serial console */
 esp_err_t lua_tool_register(void);
@@ -112,7 +114,9 @@ static const hw_test_subcmd_t s_sub_commands[] = {
     { "rfid",    "RC522 RFID reader I2C test",                    test_rfid    },
     { "usb",     "USB VBUS presence detect (board mgr vbus_detector)", test_usb     },
     { "mcu",     "STM8S001 slave MCU (battery/motor)",               test_mcu     },
+#if CONFIG_IDF_TARGET_ESP32P4
     { "usb_otg", "USB OTG role/UVC test (status/host/device/camera/stop)", test_usb_otg },
+#endif
 };
 
 /* ------------------------------------------------------------------ */
@@ -255,7 +259,11 @@ esp_err_t hw_test_cli_init(void)
 {
     esp_console_cmd_t cmd = {
         .command = "test",
+#if CONFIG_IDF_TARGET_ESP32P4
         .help = "Hardware test: test <i2c|sdcard|screen|camera|audio|touch|lvgl|button|imu|mag|als|baro|pwm|rfid|usb|mcu|usb_otg> [args...]",
+#else
+        .help = "Hardware test: test <i2c|sdcard|screen|camera|audio|touch|lvgl|button|imu|mag|als|baro|pwm|rfid|usb|mcu> [args...]",
+#endif
         .func = cmd_test,
     };
     esp_err_t err = esp_console_cmd_register(&cmd);
